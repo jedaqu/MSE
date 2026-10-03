@@ -57,9 +57,7 @@ impl Engine {
             .iter()
             .zip(checkpoint.overlay.iter())
             .enumerate()
-            .filter_map(|(index, (current, saved))| {
-                (current != saved).then_some(index)
-            })
+            .filter_map(|(index, (current, saved))| (current != saved).then_some(index))
             .collect()
     }
 }
