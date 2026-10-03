@@ -290,4 +290,121 @@ mod tests {
 
         assert_eq!(engine.read(id(4)), None);
     }
+
+    #[test]
+    fn write_checkpoint_write_restore_restores_the_saved_overlay() {
+        let mut engine = Engine::new(3);
+        engine.write(id(0), block(1)).unwrap();
+        let checkpoint = engine.checkpoint();
+        engine.write(id(0), block(2)).unwrap();
+        engine.write(id(2), block(3)).unwrap();
+
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(1)));
+        assert_eq!(engine.read(id(2)), Some(block(0)));
+        assert_eq!(engine.dirty_count(), 1);
+    }
+
+    #[test]
+    fn write_checkpoint_write_discard_clears_all_overlay_changes() {
+        let mut engine = Engine::new(2);
+        engine.write(id(0), block(1)).unwrap();
+        let _checkpoint = engine.checkpoint();
+        engine.write(id(1), block(2)).unwrap();
+
+        engine.discard();
+
+        assert_eq!(engine.read(id(0)), Some(block(0)));
+        assert_eq!(engine.read(id(1)), Some(block(0)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
+    fn commit_checkpoint_write_restore_preserves_committed_base() {
+        let mut engine = Engine::new(2);
+        engine.write(id(0), block(5)).unwrap();
+        engine.commit();
+        let checkpoint = engine.checkpoint();
+        engine.write(id(0), block(6)).unwrap();
+
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(5)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
+    fn repeated_writes_replace_the_same_overlay_block() {
+        let mut engine = Engine::new(1);
+
+        engine.write(id(0), block(1)).unwrap();
+        engine.write(id(0), block(2)).unwrap();
+        engine.write(id(0), block(3)).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(3)));
+        assert_eq!(engine.dirty_count(), 1);
+    }
+
+    #[test]
+    fn checkpoints_are_immutable_and_an_unchanged_diff_is_empty() {
+        let mut engine = Engine::new(2);
+        let clean = engine.checkpoint();
+
+        assert_eq!(engine.diff(&clean), Ok(vec![]));
+        engine.write(id(1), block(1)).unwrap();
+        let changed = engine.checkpoint();
+        engine.write(id(1), block(2)).unwrap();
+
+        assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
+        assert_eq!(engine.diff(&changed), Ok(vec![id(1)]));
+        assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
+    }
+
+    #[test]
+    fn checkpoint_after_commit_captures_a_clean_overlay() {
+        let mut engine = Engine::new(2);
+        engine.write(id(1), block(4)).unwrap();
+        engine.commit();
+        let checkpoint = engine.checkpoint();
+        engine.write(id(0), block(7)).unwrap();
+
+        assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0)]));
+        engine.restore(&checkpoint).unwrap();
+        assert_eq!(engine.read(id(1)), Some(block(4)));
+        assert_eq!(engine.read(id(0)), Some(block(0)));
+    }
+
+    #[test]
+    fn repeated_commit_discard_and_restore_are_idempotent() {
+        let mut engine = Engine::new(1);
+        let clean = engine.checkpoint();
+
+        engine.discard();
+        engine.commit();
+        engine.restore(&clean).unwrap();
+        engine.restore(&clean).unwrap();
+        assert_eq!(engine.dirty_count(), 0);
+
+        engine.write(id(0), block(8)).unwrap();
+        engine.commit();
+        engine.commit();
+        engine.discard();
+        assert_eq!(engine.read(id(0)), Some(block(8)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
+    fn empty_engine_supports_lifecycle_operations() {
+        let mut engine = Engine::new(0);
+        let checkpoint = engine.checkpoint();
+
+        assert_eq!(engine.block_count(), 0);
+        assert_eq!(engine.diff(&checkpoint), Ok(vec![]));
+        engine.restore(&checkpoint).unwrap();
+        engine.commit();
+        engine.discard();
+        assert_eq!(engine.dirty_count(), 0);
+        assert_eq!(engine.read(id(0)), None);
+    }
 }

@@ -55,3 +55,11 @@ Public technical record only.
 **Correction:** Applied `cargo fmt` before the repeated quality gate.
 
 **Status:** Corrected before PR.
+
+## M0.3 lifecycle audit
+
+**Defined behavior:** `write()` replaces the addressed overlay block. `checkpoint()` captures an immutable overlay snapshot. `restore()` replaces the current overlay after compatibility validation. `discard()` clears the complete overlay and leaves base blocks unchanged. `commit()` moves all overlay blocks into base and clears those overlay entries. `diff()` reports overlay entries that differ from the checkpoint. `read()` returns the overlay value when present, otherwise the base value.
+
+**Validation:** Sequence tests cover checkpoint/restore, discard, commit followed by checkpoint and restore, repeated writes, empty diffs, immutable multiple checkpoints, empty engines, repeated lifecycle operations, and existing range errors.
+
+**Status:** Audit found no lifecycle implementation defect; M0.3 adds executable coverage for these semantics.
