@@ -62,4 +62,10 @@ Public technical record only.
 
 **Validation:** Sequence tests cover checkpoint/restore, discard, commit followed by checkpoint and restore, repeated writes, empty diffs, immutable multiple checkpoints, empty engines, repeated lifecycle operations, and existing range errors.
 
+**Commit:** `bbf8726` (initial M0.3 implementation; closure update follows in this PR).
+
+**PR:** #5, `M0.3: specify lifecycle semantics with sequence tests`.
+
+**CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162363093`, `37162366588`). The closure documentation update is validated separately by the final PR head.
+
 **Status:** Audit found no lifecycle implementation defect; M0.3 adds executable coverage for these semantics.
