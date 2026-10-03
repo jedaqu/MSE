@@ -80,4 +80,10 @@ Public technical record only.
 
 **Validation:** Static inspection of `Engine` and `commit()` found the unresolved failure boundary. Existing M0.3 operation-sequence tests provide behavioral evidence for the current in-memory semantics; they cannot validate a generic backend failure contract.
 
+**Commit:** `73c78bf` (initial M0.4 audit; closure update follows in this PR).
+
+**PR:** #6, `M0.4: record storage boundary decision gate`.
+
+**CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162776860`, `37162779872`). The closure documentation update is validated separately by the final PR head.
+
 **Status:** Pending architecture decision. M0.5 has not started.
