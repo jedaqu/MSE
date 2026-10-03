@@ -17,3 +17,18 @@ Public technical record only.
 **Correction:** Block addresses are now typed with `BlockId`, writes are bounds-checked, and out-of-range writes return `WriteError::OutOfRange` instead of panicking.
 
 **Status:** Corrected before integration.
+
+## M0.1 closure
+
+**Integrated commit:** `56b2aa2c16e30a97a215d35d5cbcb18c81557287`
+
+**Scope:** Typed blocks and block IDs, explicit bounds errors, state counters, and boundary regression tests. No production storage integration was introduced.
+
+**Validation:** PR #2 validation passed formatting, tests, and Clippy on the M0.1 head commit `0c529a342f8ee8855bee0ad15fd5dae368fe6726`.
+
+**Post-merge CI evidence:** The available GitHub workflow/status interface returned no post-merge run or combined status for the integrated commit. This is recorded as an evidence limitation, not as a claim of failure.
+
+**Audit:** `main` was inspected after integration. The M0.1 diff from `c8dd2c5c69e92ff4fe83c121e7e07557464eb347` to `56b2aa2c16e30a97a215d35d5cbcb18c81557287` contains only the intended changes in `src/lib.rs` and this public technical ledger entry.
+
+**Status:** Closed at M0.1. Ready for the next milestone after this documentation change is integrated.
+
