@@ -69,3 +69,21 @@ Public technical record only.
 **CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162363093`, `37162366588`). The closure documentation update is validated separately by the final PR head.
 
 **Status:** Audit found no lifecycle implementation defect; M0.3 adds executable coverage for these semantics.
+
+## M0.4 storage boundary decision required
+
+**Audit:** The current base is an in-memory `Vec<Block>`, and `commit()` transfers overlay blocks into that base. A backend boundary used by `commit()` must describe how backend write failures affect the base and overlay.
+
+**Decision required:** Choose whether a backend must apply a commit batch atomically, or whether partial commits are permitted and exposed as progress. This determines the storage trait contract, commit error type, and whether overlay entries are retained or cleared after a failure.
+
+**Reason for stopping:** The in-memory implementation cannot exercise backend write failures. Choosing either failure contract here would establish lifecycle semantics without evidence or an agreed requirement. No storage abstraction or backend was added.
+
+**Validation:** Static inspection of `Engine` and `commit()` found the unresolved failure boundary. Existing M0.3 operation-sequence tests provide behavioral evidence for the current in-memory semantics; they cannot validate a generic backend failure contract.
+
+**Commit:** `73c78bf` (initial M0.4 audit; closure update follows in this PR).
+
+**PR:** #6, `M0.4: record storage boundary decision gate`.
+
+**CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162776860`, `37162779872`). The closure documentation update is validated separately by the final PR head.
+
+**Status:** Pending architecture decision. M0.5 has not started.
