@@ -1,6 +1,11 @@
 pub const BLOCK_SIZE: usize = 4096;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Checkpoint {
+    overlay: Vec<Option<[u8; BLOCK_SIZE]>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Engine {
     base: Vec<[u8; BLOCK_SIZE]>,
     overlay: Vec<Option<[u8; BLOCK_SIZE]>>,
@@ -25,12 +30,13 @@ impl Engine {
         self.overlay[index] = Some(block);
     }
 
-    pub fn checkpoint(&self) -> Self {
-        self.clone()
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            overlay: self.overlay.clone(),
+        }
     }
 
-    pub fn restore(&mut self, checkpoint: &Self) {
-        self.base = checkpoint.base.clone();
+    pub fn restore(&mut self, checkpoint: &Checkpoint) {
         self.overlay = checkpoint.overlay.clone();
     }
 
@@ -46,7 +52,7 @@ impl Engine {
         }
     }
 
-    pub fn diff(&self, checkpoint: &Self) -> Vec<usize> {
+    pub fn diff(&self, checkpoint: &Checkpoint) -> Vec<usize> {
         self.overlay
             .iter()
             .zip(checkpoint.overlay.iter())
