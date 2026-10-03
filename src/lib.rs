@@ -43,10 +43,7 @@ pub struct Engine {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WriteError {
-    OutOfRange {
-        id: BlockId,
-        block_count: usize,
-    },
+    OutOfRange { id: BlockId, block_count: usize },
 }
 
 impl Engine {
