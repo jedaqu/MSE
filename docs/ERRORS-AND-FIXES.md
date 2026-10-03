@@ -32,3 +32,20 @@ Public technical record only.
 
 **Status:** Closed at M0.1. Ready for the next milestone after this documentation change is integrated.
 
+## M0.2-001
+
+**Problem:** `restore()` accepted checkpoints with a different block count, while `diff()` compared vectors with `zip()` and could silently omit unmatched blocks.
+
+**Correction:** Checkpoints retain their block count. `restore()` validates compatibility before changing the overlay and returns `RestoreError` on mismatch. `diff()` returns `Result` and reports the same incompatibility explicitly.
+
+**Validation:** Added coverage for compatible and incompatible restore/diff behavior, including state preservation after a rejected restore and read/write after a valid restore.
+
+**Status:** Corrected in the M0.2 branch; pending PR and CI.
+
+## M0.2-002
+
+**Problem:** The first formatting check found a Rust formatting difference in the new `diff()` expression.
+
+**Correction:** Applied `cargo fmt` before the repeated quality gate.
+
+**Status:** Corrected before PR.

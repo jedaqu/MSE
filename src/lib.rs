@@ -32,6 +32,7 @@ impl BlockId {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
+    block_count: usize,
     overlay: Vec<Option<Block>>,
 }
 
@@ -44,6 +45,16 @@ pub struct Engine {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WriteError {
     OutOfRange { id: BlockId, block_count: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestoreError {
+    IncompatibleBlockCount { engine: usize, checkpoint: usize },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DiffError {
+    IncompatibleBlockCount { engine: usize, checkpoint: usize },
 }
 
 impl Engine {
@@ -81,12 +92,22 @@ impl Engine {
 
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
+            block_count: self.block_count(),
             overlay: self.overlay.clone(),
         }
     }
 
-    pub fn restore(&mut self, checkpoint: &Checkpoint) {
+    pub fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), RestoreError> {
+        if checkpoint.block_count != self.block_count()
+            || checkpoint.overlay.len() != self.block_count()
+        {
+            return Err(RestoreError::IncompatibleBlockCount {
+                engine: self.block_count(),
+                checkpoint: checkpoint.block_count,
+            });
+        }
         self.overlay = checkpoint.overlay.clone();
+        Ok(())
     }
 
     pub fn discard(&mut self) {
@@ -105,21 +126,30 @@ impl Engine {
         }
     }
 
-    pub fn diff(&self, checkpoint: &Checkpoint) -> Vec<BlockId> {
-        self.overlay
+    pub fn diff(&self, checkpoint: &Checkpoint) -> Result<Vec<BlockId>, DiffError> {
+        if checkpoint.block_count != self.block_count()
+            || checkpoint.overlay.len() != self.block_count()
+        {
+            return Err(DiffError::IncompatibleBlockCount {
+                engine: self.block_count(),
+                checkpoint: checkpoint.block_count,
+            });
+        }
+        Ok(self
+            .overlay
             .iter()
             .zip(checkpoint.overlay.iter())
             .enumerate()
             .filter_map(|(index, (current, saved))| {
                 (current != saved).then_some(BlockId::new(index))
             })
-            .collect()
+            .collect())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, BlockId, Engine, WriteError, BLOCK_SIZE};
+    use super::{Block, BlockId, DiffError, Engine, RestoreError, WriteError, BLOCK_SIZE};
 
     fn block(value: u8) -> Block {
         Block::from_bytes([value; BLOCK_SIZE])
@@ -148,7 +178,7 @@ mod tests {
         let checkpoint = engine.checkpoint();
         engine.write(id(2), block(2)).unwrap();
 
-        engine.restore(&checkpoint);
+        engine.restore(&checkpoint).unwrap();
 
         assert_eq!(engine.read(id(1)), Some(block(1)));
         assert_eq!(engine.read(id(2)), Some(block(0)));
@@ -178,7 +208,7 @@ mod tests {
         engine.write(id(2), block(8)).unwrap();
         let checkpoint = engine.checkpoint();
         engine.write(id(2), block(7)).unwrap();
-        engine.restore(&checkpoint);
+        engine.restore(&checkpoint).unwrap();
 
         assert_eq!(engine.read(id(2)), Some(block(8)));
     }
@@ -191,7 +221,51 @@ mod tests {
         engine.write(id(0), block(5)).unwrap();
         engine.write(id(3), block(6)).unwrap();
 
-        assert_eq!(engine.diff(&checkpoint), vec![id(0), id(3)]);
+        assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0), id(3)]));
+    }
+
+    #[test]
+    fn incompatible_restore_is_rejected_without_mutation() {
+        let mut engine = Engine::new(3);
+        engine.write(id(1), block(4)).unwrap();
+        let before = engine.clone();
+        let checkpoint = Engine::new(2).checkpoint();
+
+        assert_eq!(
+            engine.restore(&checkpoint),
+            Err(RestoreError::IncompatibleBlockCount {
+                engine: 3,
+                checkpoint: 2,
+            })
+        );
+        assert_eq!(engine, before);
+    }
+
+    #[test]
+    fn incompatible_diff_is_explicit() {
+        let engine = Engine::new(3);
+        let checkpoint = Engine::new(2).checkpoint();
+
+        assert_eq!(
+            engine.diff(&checkpoint),
+            Err(DiffError::IncompatibleBlockCount {
+                engine: 3,
+                checkpoint: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn compatible_restore_keeps_engine_readable_and_writable() {
+        let mut engine = Engine::new(2);
+        engine.write(id(0), block(3)).unwrap();
+        let checkpoint = engine.checkpoint();
+        engine.write(id(0), block(8)).unwrap();
+
+        engine.restore(&checkpoint).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(3)));
+        engine.write(id(1), block(9)).unwrap();
+        assert_eq!(engine.read(id(1)), Some(block(9)));
     }
 
     #[test]
