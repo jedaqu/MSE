@@ -40,7 +40,13 @@ Public technical record only.
 
 **Validation:** Added coverage for compatible and incompatible restore/diff behavior, including state preservation after a rejected restore and read/write after a valid restore.
 
-**Status:** Corrected in the M0.2 branch; pending PR and CI.
+**Commit:** `883f171` (initial M0.2 implementation; closure update follows in this PR).
+
+**PR:** #4, `M0.2: validate checkpoint state compatibility`.
+
+**CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162199240`, `37162202660`). The closure documentation update is validated separately by the final PR head.
+
+**Status:** Corrected; M0.2 PR CI passed.
 
 ## M0.2-002
 
