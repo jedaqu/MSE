@@ -55,3 +55,17 @@ Public technical record only.
 **Correction:** Applied `cargo fmt` before the repeated quality gate.
 
 **Status:** Corrected before PR.
+
+## M0.3 lifecycle audit
+
+**Defined behavior:** `write()` replaces the addressed overlay block. `checkpoint()` captures an immutable overlay snapshot. `restore()` replaces the current overlay after compatibility validation. `discard()` clears the complete overlay and leaves base blocks unchanged. `commit()` moves all overlay blocks into base and clears those overlay entries. `diff()` reports overlay entries that differ from the checkpoint. `read()` returns the overlay value when present, otherwise the base value.
+
+**Validation:** Sequence tests cover checkpoint/restore, discard, commit followed by checkpoint and restore, repeated writes, empty diffs, immutable multiple checkpoints, empty engines, repeated lifecycle operations, and existing range errors.
+
+**Commit:** `bbf8726` (initial M0.3 implementation; closure update follows in this PR).
+
+**PR:** #5, `M0.3: specify lifecycle semantics with sequence tests`.
+
+**CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162363093`, `37162366588`). The closure documentation update is validated separately by the final PR head.
+
+**Status:** Audit found no lifecycle implementation defect; M0.3 adds executable coverage for these semantics.
