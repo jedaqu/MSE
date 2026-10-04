@@ -87,3 +87,13 @@ Public technical record only.
 **CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162776860`, `37162779872`). The closure documentation update is validated separately by the final PR head.
 
 **Status:** Pending architecture decision. M0.5 has not started.
+
+## M0.5 hardening and baseline
+
+**Scope:** Harden the existing in-memory core, improve executable boundary coverage, pin the validation toolchain, and establish an informational performance baseline.
+
+**Correction / improvement:** Added adversarial tests for extreme block IDs, rejected-write state preservation, dense diff/restore behavior, and committed-state preservation. Added a release-mode baseline binary covering read, write, checkpoint, diff, restore, and commit paths. Pinned Rust to 1.98.1 so local and CI validation use the same toolchain.
+
+**Boundary:** No persistence, storage abstraction, backend, filesystem, block-device, kernel, driver, or OS-specific integration was introduced. M0.4 backend commit failure semantics remain undecided.
+
+**Status:** Implementation pending CI and second audit.
