@@ -401,7 +401,7 @@ pub(crate) mod contract_tests {
                 backend.reconcile(committed_tx).unwrap(),
                 CommitOutcome::Committed {
                     transaction_id: committed_tx,
-                    generation: Generation::new(1),
+                    generation: Generation::new(2),
                 }
             );
             assert!(
