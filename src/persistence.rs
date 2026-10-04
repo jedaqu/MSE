@@ -627,8 +627,10 @@ fn decode_prepare(payload: &[u8], block_count: usize) -> Option<(Generation, Vec
     Some((
         base,
         payload[16..]
-            .chunks_exact(8)
-            .map(|chunk| u64::from_le_bytes(chunk.try_into().unwrap()))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|chunk| u64::from_le_bytes(*chunk))
             .collect(),
     ))
 }
