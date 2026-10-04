@@ -306,9 +306,7 @@ impl FileBackend {
             return Err(PersistenceError::TransactionNotPrepared { transaction_id });
         };
         if entry.prepared.transaction_id() != transaction_id {
-            return Err(PersistenceError::TransactionNotPrepared {
-                transaction_id,
-            });
+            return Err(PersistenceError::TransactionNotPrepared { transaction_id });
         }
 
         self.append(DISCARD, transaction_id, Generation::initial(), &[])?;
@@ -490,7 +488,8 @@ impl FileBackend {
                         decode_object(&payload).ok_or(PersistenceError::Corrupt(offset))?;
                     let expected_id = u64::try_from(objects.len() + 1)
                         .map_err(|_| PersistenceError::Corrupt(offset))?;
-                    if object_id != expected_id || (objects.is_empty() && block != Block::zeroed()) {
+                    if object_id != expected_id || (objects.is_empty() && block != Block::zeroed())
+                    {
                         return Err(PersistenceError::Corrupt(offset));
                     }
                     objects.push(block);
