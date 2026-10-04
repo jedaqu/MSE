@@ -3,9 +3,8 @@ use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use crate::{
-    Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation,
-    DurabilityObservationError, DurabilityState, Generation, PreparedState, TransactionId,
-    BLOCK_SIZE,
+    Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, DurabilityObservationError,
+    DurabilityState, Generation, PreparedState, TransactionId, BLOCK_SIZE,
 };
 
 const MAGIC: &[u8; 8] = b"MSEF0001";
@@ -23,16 +22,37 @@ pub enum PersistenceError {
     InvalidHeader,
     UnsupportedVersion(u32),
     Corrupt(u64),
-    BlockCountMismatch { expected: usize, actual: usize },
-    BlockOutOfRange { id: BlockId, block_count: usize },
-    GenerationAlreadyPrepared { generation: Generation },
-    TransactionAlreadyPrepared { transaction_id: TransactionId },
-    TransactionAlreadyCompleted { transaction_id: TransactionId },
-    TransactionNotPrepared { transaction_id: TransactionId },
-    TransactionStateMismatch { transaction_id: TransactionId },
-    GenerationMismatch { expected: Generation, actual: Generation },
+    BlockCountMismatch {
+        expected: usize,
+        actual: usize,
+    },
+    BlockOutOfRange {
+        id: BlockId,
+        block_count: usize,
+    },
+    GenerationAlreadyPrepared {
+        generation: Generation,
+    },
+    TransactionAlreadyPrepared {
+        transaction_id: TransactionId,
+    },
+    TransactionAlreadyCompleted {
+        transaction_id: TransactionId,
+    },
+    TransactionNotPrepared {
+        transaction_id: TransactionId,
+    },
+    TransactionStateMismatch {
+        transaction_id: TransactionId,
+    },
+    GenerationMismatch {
+        expected: Generation,
+        actual: Generation,
+    },
     GenerationExhausted,
-    CommitNotConfirmed { transaction_id: TransactionId },
+    CommitNotConfirmed {
+        transaction_id: TransactionId,
+    },
 }
 
 impl From<io::Error> for PersistenceError {
@@ -147,20 +167,12 @@ impl FileBackend {
         transaction_id: TransactionId,
         changes: &ChangeSet,
     ) -> Result<PreparedState, PersistenceError> {
-        if self
-            .completed
-            .iter()
-            .any(|(id, _)| *id == transaction_id)
-        {
-            return Err(PersistenceError::TransactionAlreadyCompleted {
-                transaction_id,
-            });
+        if self.completed.iter().any(|(id, _)| *id == transaction_id) {
+            return Err(PersistenceError::TransactionAlreadyCompleted { transaction_id });
         }
         if let Some(existing) = &self.prepared {
             if existing.prepared.transaction_id() == transaction_id {
-                return Err(PersistenceError::TransactionAlreadyPrepared {
-                    transaction_id,
-                });
+                return Err(PersistenceError::TransactionAlreadyPrepared { transaction_id });
             }
             return Err(PersistenceError::GenerationAlreadyPrepared {
                 generation: self.generation,
@@ -184,16 +196,11 @@ impl FileBackend {
             root[id.index()] = object_id;
         }
 
-        let prepared = PreparedState::new(
-            transaction_id,
-            self.generation,
-            target,
-            changes.clone(),
-        )
-        .map_err(|_| PersistenceError::GenerationMismatch {
-            expected: target,
-            actual: self.generation,
-        })?;
+        let prepared = PreparedState::new(transaction_id, self.generation, target, changes.clone())
+            .map_err(|_| PersistenceError::GenerationMismatch {
+                expected: target,
+                actual: self.generation,
+            })?;
 
         self.append(
             PREPARE,
@@ -215,10 +222,7 @@ impl FileBackend {
             .map(|entry| &entry.prepared)
     }
 
-    pub fn commit(
-        &mut self,
-        prepared: &PreparedState,
-    ) -> Result<CommitOutcome, PersistenceError> {
+    pub fn commit(&mut self, prepared: &PreparedState) -> Result<CommitOutcome, PersistenceError> {
         if let Some((_, generation)) = self
             .completed
             .iter()
@@ -276,11 +280,7 @@ impl FileBackend {
     ) -> Result<CommitOutcome, PersistenceError> {
         self.reload()?;
 
-        if let Some((_, generation)) = self
-            .completed
-            .iter()
-            .find(|(id, _)| *id == transaction_id)
-        {
+        if let Some((_, generation)) = self.completed.iter().find(|(id, _)| *id == transaction_id) {
             return Ok(CommitOutcome::Committed {
                 transaction_id,
                 generation: *generation,
@@ -299,19 +299,11 @@ impl FileBackend {
     }
 
     pub fn discard(&mut self, transaction_id: TransactionId) -> Result<(), PersistenceError> {
-        if self
-            .completed
-            .iter()
-            .any(|(id, _)| *id == transaction_id)
-        {
-            return Err(PersistenceError::TransactionAlreadyCompleted {
-                transaction_id,
-            });
+        if self.completed.iter().any(|(id, _)| *id == transaction_id) {
+            return Err(PersistenceError::TransactionAlreadyCompleted { transaction_id });
         }
         let Some(entry) = &self.prepared else {
-            return Err(PersistenceError::TransactionNotPrepared {
-                transaction_id,
-            });
+            return Err(PersistenceError::TransactionNotPrepared { transaction_id });
         };
         if entry.prepared.transaction_id() != transaction_id {
             return Err(PersistenceError::TransactionNotPrepared {
@@ -332,9 +324,7 @@ impl FileBackend {
         let generation = match outcome {
             CommitOutcome::Committed { generation, .. } => *generation,
             CommitOutcome::Aborted { .. } | CommitOutcome::Unknown { .. } => {
-                return Err(PersistenceError::CommitNotConfirmed {
-                    transaction_id,
-                })
+                return Err(PersistenceError::CommitNotConfirmed { transaction_id })
             }
         };
 
@@ -385,13 +375,7 @@ impl FileBackend {
         generation: Generation,
         payload: &[u8],
     ) -> Result<(), PersistenceError> {
-        append_record(
-            &mut self.file,
-            kind,
-            transaction_id,
-            generation,
-            payload,
-        )
+        append_record(&mut self.file, kind, transaction_id, generation, payload)
     }
 
     fn intern(&mut self, block: Block) -> Result<u64, PersistenceError> {
@@ -448,10 +432,8 @@ impl FileBackend {
         if version != VERSION {
             return Err(PersistenceError::UnsupportedVersion(version));
         }
-        let block_count = usize::try_from(u64::from_le_bytes(
-            header[12..20].try_into().unwrap(),
-        ))
-        .map_err(|_| PersistenceError::InvalidHeader)?;
+        let block_count = usize::try_from(u64::from_le_bytes(header[12..20].try_into().unwrap()))
+            .map_err(|_| PersistenceError::InvalidHeader)?;
         if block_count != expected_block_count {
             return Err(PersistenceError::BlockCountMismatch {
                 expected: expected_block_count,
@@ -477,9 +459,7 @@ impl FileBackend {
             let mut record = [0u8; RECORD_HEADER];
             file.read_exact(&mut record)?;
             let kind = record[0];
-            let tx = TransactionId::from_raw(u64::from_le_bytes(
-                record[1..9].try_into().unwrap(),
-            ));
+            let tx = TransactionId::from_raw(u64::from_le_bytes(record[1..9].try_into().unwrap()));
             let record_generation =
                 Generation::new(u64::from_le_bytes(record[9..17].try_into().unwrap()));
             let payload_len = u64::from_le_bytes(record[17..25].try_into().unwrap());
@@ -510,9 +490,7 @@ impl FileBackend {
                         decode_object(&payload).ok_or(PersistenceError::Corrupt(offset))?;
                     let expected_id = u64::try_from(objects.len() + 1)
                         .map_err(|_| PersistenceError::Corrupt(offset))?;
-                    if object_id != expected_id
-                        || (objects.is_empty() && block != Block::zeroed())
-                    {
+                    if object_id != expected_id || (objects.is_empty() && block != Block::zeroed()) {
                         return Err(PersistenceError::Corrupt(offset));
                     }
                     objects.push(block);
@@ -537,13 +515,8 @@ impl FileBackend {
                         return Err(PersistenceError::Corrupt(offset));
                     }
                     let changes = root_changes(&root, &next_root, &objects);
-                    let prepared_state = PreparedState::new(
-                        tx,
-                        base,
-                        record_generation,
-                        changes,
-                    )
-                    .map_err(|_| PersistenceError::Corrupt(offset))?;
+                    let prepared_state = PreparedState::new(tx, base, record_generation, changes)
+                        .map_err(|_| PersistenceError::Corrupt(offset))?;
                     prepared = Some(RetainedPrepare {
                         prepared: prepared_state,
                         root: next_root,
@@ -822,9 +795,7 @@ mod tests {
         let mut reopened = FileBackend::open(&file, 2).unwrap();
         assert_eq!(
             reopened.reconcile(tx),
-            Err(PersistenceError::TransactionNotPrepared {
-                transaction_id: tx
-            })
+            Err(PersistenceError::TransactionNotPrepared { transaction_id: tx })
         );
         fs::remove_file(file).unwrap();
     }
@@ -859,10 +830,7 @@ mod tests {
         backend.prepare(tx, &changes(0, 5, 2)).unwrap();
         drop(backend);
 
-        let mut raw = OpenOptions::new()
-            .append(true)
-            .open(&file)
-            .unwrap();
+        let mut raw = OpenOptions::new().append(true).open(&file).unwrap();
         raw.write_all(&[3, 0, 0, 0, 0]).unwrap();
         drop(raw);
 
