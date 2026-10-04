@@ -47,7 +47,6 @@ impl ObjectStoreId {
     pub fn value(self) -> u64 {
         self.0
     }
-
 }
 
 /// Identity of one immutable object stored in an `ObjectStore`.
