@@ -28,3 +28,19 @@ checkpoint remains compatible with the engine's fixed block count.
 The ID identifies the immutable checkpoint value in the current process; the
 checkpoint carries the state that `restore()` uses. IDs are not serialized or
 stable across executions.
+
+
+## M1.7 commit and recovery contract
+
+The repository now defines backend-neutral transaction vocabulary without implementing persistence.
+
+- `TransactionId` identifies one commit attempt.
+- `Generation` identifies the logical committed state sequence.
+- `PreparedState` freezes the transaction identity, source generation, target generation, and `ChangeSet`.
+- `CommitOutcome` exposes only `Committed`, `Aborted`, or `Unknown`.
+- Atomic visibility is a logical publication rule: observers see the old committed generation or the new committed generation, never a partially committed generation.
+- Physical preparation may involve multiple internal writes, but those writes are not themselves committed visibility.
+- An `Unknown` outcome retains the same transaction identity for reconciliation; a retry must reconcile or replay that same transaction rather than silently creating an independent second commit.
+- Durability is a separate boundary from logical publication and is not implemented by the current in-memory core.
+
+This contract is intentionally backend-neutral. No storage trait, persistence layer, journal, filesystem, block device, kernel, driver, operating-system-specific integration, or network protocol is introduced by M1.7.

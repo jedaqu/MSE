@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 static NEXT_OBJECT_STORE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static NEXT_TRANSACTION_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block([u8; BLOCK_SIZE]);
@@ -296,6 +297,136 @@ impl ChangeSet {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TransactionId(u64);
+
+impl TransactionId {
+    /// Creates a new opaque process-local transaction identity.
+    pub fn new() -> Self {
+        Self(NEXT_TRANSACTION_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// Returns the numeric value of this transaction identity.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
+impl Default for TransactionId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Generation(u64);
+
+impl Generation {
+    /// Creates an explicit logical generation value.
+    pub const fn new(value: u64) -> Self {
+        Self(value)
+    }
+
+    /// Returns the initial logical generation.
+    pub const fn initial() -> Self {
+        Self(0)
+    }
+
+    /// Returns the numeric generation value.
+    pub const fn value(self) -> u64 {
+        self.0
+    }
+
+    /// Returns the next generation when the counter has not reached its limit.
+    pub fn next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PreparedState {
+    transaction_id: TransactionId,
+    base_generation: Generation,
+    target_generation: Generation,
+    changes: ChangeSet,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PrepareError {
+    TargetGenerationNotAhead {
+        base: Generation,
+        target: Generation,
+    },
+}
+
+impl PreparedState {
+    /// Freezes a change set for one transaction and target logical generation.
+    pub fn new(
+        transaction_id: TransactionId,
+        base_generation: Generation,
+        target_generation: Generation,
+        changes: ChangeSet,
+    ) -> Result<Self, PrepareError> {
+        if target_generation <= base_generation {
+            return Err(PrepareError::TargetGenerationNotAhead {
+                base: base_generation,
+                target: target_generation,
+            });
+        }
+
+        Ok(Self {
+            transaction_id,
+            base_generation,
+            target_generation,
+            changes,
+        })
+    }
+
+    /// Returns the transaction identity associated with this prepared state.
+    pub fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// Returns the committed generation from which this transaction was prepared.
+    pub fn base_generation(&self) -> Generation {
+        self.base_generation
+    }
+
+    /// Returns the candidate generation published by a successful commit.
+    pub fn target_generation(&self) -> Generation {
+        self.target_generation
+    }
+
+    /// Returns the immutable change set retained for this transaction.
+    pub fn changes(&self) -> &ChangeSet {
+        &self.changes
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CommitOutcome {
+    /// The target generation is known to be atomically published.
+    Committed {
+        transaction_id: TransactionId,
+        generation: Generation,
+    },
+    /// The target generation is known not to have been published.
+    Aborted { transaction_id: TransactionId },
+    /// Publication status cannot be established yet.
+    Unknown { transaction_id: TransactionId },
+}
+
+impl CommitOutcome {
+    /// Returns the transaction identity carried by this outcome.
+    pub fn transaction_id(&self) -> TransactionId {
+        match self {
+            Self::Committed { transaction_id, .. }
+            | Self::Aborted { transaction_id }
+            | Self::Unknown { transaction_id } => *transaction_id,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Engine {
     base: Vec<Block>,
@@ -473,8 +604,9 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{
-        Block, BlockId, DiffError, Engine, ObjectId, ObjectStore, RestoreError, StateRoot,
-        StateRootError, WriteError, BLOCK_SIZE,
+        Block, BlockId, ChangeSet, CommitOutcome, DiffError, Engine, Generation, ObjectId,
+        ObjectStore, PrepareError, PreparedState, RestoreError, StateRoot, StateRootError,
+        TransactionId, WriteError, BLOCK_SIZE,
     };
 
     fn block(value: u8) -> Block {
@@ -1054,5 +1186,93 @@ mod tests {
         engine.discard();
         assert_eq!(engine.dirty_count(), 0);
         assert_eq!(engine.read(id(0)), None);
+    }
+
+    #[test]
+    fn transaction_ids_are_opaque_and_distinct() {
+        let first = TransactionId::new();
+        let second = TransactionId::new();
+
+        assert_ne!(first, second);
+        assert!(second.value() > first.value());
+    }
+
+    #[test]
+    fn generations_are_monotonic_until_exhaustion() {
+        let initial = Generation::initial();
+
+        assert_eq!(initial.value(), 0);
+        assert_eq!(initial.next(), Some(Generation::new(1)));
+        assert_eq!(Generation::new(u64::MAX).next(), None);
+    }
+
+    #[test]
+    fn prepared_state_retains_transaction_identity_generations_and_changes() {
+        let transaction_id = TransactionId::new();
+        let changes = ChangeSet {
+            changes: vec![(id(1), block(7))],
+        };
+
+        let prepared = PreparedState::new(
+            transaction_id,
+            Generation::new(4),
+            Generation::new(5),
+            changes.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(prepared.transaction_id(), transaction_id);
+        assert_eq!(prepared.base_generation(), Generation::new(4));
+        assert_eq!(prepared.target_generation(), Generation::new(5));
+        assert_eq!(prepared.changes(), &changes);
+    }
+
+    #[test]
+    fn prepared_state_rejects_a_target_generation_that_is_not_ahead() {
+        let transaction_id = TransactionId::new();
+        let changes = ChangeSet {
+            changes: vec![(id(0), block(3))],
+        };
+
+        assert_eq!(
+            PreparedState::new(
+                transaction_id,
+                Generation::new(5),
+                Generation::new(5),
+                changes.clone(),
+            ),
+            Err(PrepareError::TargetGenerationNotAhead {
+                base: Generation::new(5),
+                target: Generation::new(5),
+            })
+        );
+        assert_eq!(
+            PreparedState::new(
+                transaction_id,
+                Generation::new(6),
+                Generation::new(5),
+                changes,
+            ),
+            Err(PrepareError::TargetGenerationNotAhead {
+                base: Generation::new(6),
+                target: Generation::new(5),
+            })
+        );
+    }
+
+    #[test]
+    fn commit_outcomes_keep_the_same_transaction_identity() {
+        let transaction_id = TransactionId::new();
+
+        let committed = CommitOutcome::Committed {
+            transaction_id,
+            generation: Generation::new(9),
+        };
+        let aborted = CommitOutcome::Aborted { transaction_id };
+        let unknown = CommitOutcome::Unknown { transaction_id };
+
+        assert_eq!(committed.transaction_id(), transaction_id);
+        assert_eq!(aborted.transaction_id(), transaction_id);
+        assert_eq!(unknown.transaction_id(), transaction_id);
     }
 }
