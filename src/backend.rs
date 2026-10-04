@@ -50,7 +50,8 @@ pub trait PersistenceBackend {
 pub(crate) mod contract_tests {
     use super::PersistenceBackend;
     use crate::{
-        Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, Engine, Generation, PreparedState, TransactionId, BLOCK_SIZE,
+        Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, Engine, Generation,
+        PreparedState, TransactionId, BLOCK_SIZE,
     };
 
     fn block(value: u8) -> Block {
