@@ -111,6 +111,12 @@ impl ObjectStore {
         self.objects.get(index)
     }
 }
+impl Default for ObjectStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 
 /// Immutable mapping from logical block positions to shared object identities.
 #[derive(Clone, Debug, PartialEq, Eq)]
