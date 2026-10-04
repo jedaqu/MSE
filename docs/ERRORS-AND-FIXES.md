@@ -86,7 +86,7 @@ Public technical record only.
 
 **CI evidence:** Both `rust` jobs passed on the initial PR commit (`37162776860`, `37162779872`). The closure documentation update is validated separately by the final PR head.
 
-**Status:** Pending architecture decision. M0.5 has not started.
+**Status:** Pending architecture decision. M0.5 is complete independently; its in-memory hardening does not resolve this backend decision.
 
 ## M0.5 hardening and baseline
 
@@ -96,4 +96,6 @@ Public technical record only.
 
 **Boundary:** No persistence, storage abstraction, backend, filesystem, block-device, kernel, driver, or OS-specific integration was introduced. M0.4 backend commit failure semantics remain undecided.
 
-**Status:** Implementation pending CI and second audit.
+**Validation evidence:** The M0.5 baseline document records a successful final CI run, including formatting, 23 tests, Clippy with warnings denied, and the release baseline. That evidence does not claim post-merge CI or broader backend behavior.
+
+**Status:** Complete. M0.4 backend commit failure semantics remain undecided.
