@@ -14,6 +14,7 @@ not define persistence or future backend failure behavior.
 | `discard()` | Clears every overlay entry and leaves the base unchanged. |
 | `commit()` | Moves all present overlay values into the in-memory base and clears those entries. This describes only the infallible memory operation; it makes no choice about future backend atomicity or partial progress. |
 | `dirty_count()` | Counts present overlay entries. A block written with bytes equal to its base still counts as dirty. |
+| `pending_changes()` | Returns an immutable in-memory snapshot of present overlay entries in ascending block order. It exposes current pending changes without choosing persistence or backend commit-failure semantics. |
 | `diff(checkpoint)` | Returns IDs whose optional overlay entries differ from the checkpoint overlay, in ascending block order. It does not compare base contents or effective read values. Incompatible checkpoints return `DiffError`. |
 | `inspect(checkpoint)` | Returns total and dirty counts, whether changes exist, affected IDs in ascending order, and an explicit checkpoint relationship. It does not mutate state. |
 

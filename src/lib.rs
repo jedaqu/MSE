@@ -90,6 +90,28 @@ pub struct StateInspection {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChangeSet {
+    changes: Vec<(BlockId, Block)>,
+}
+
+impl ChangeSet {
+    /// Returns the number of pending block changes in this snapshot.
+    pub fn len(&self) -> usize {
+        self.changes.len()
+    }
+
+    /// Returns whether this snapshot contains no pending block changes.
+    pub fn is_empty(&self) -> bool {
+        self.changes.is_empty()
+    }
+
+    /// Returns pending changes in ascending block-ID order.
+    pub fn as_slice(&self) -> &[(BlockId, Block)] {
+        &self.changes
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Engine {
     base: Vec<Block>,
     overlay: Vec<Option<Block>>,
@@ -181,6 +203,22 @@ impl Engine {
     /// Counts overlay entries, including writes equal to their base value.
     pub fn dirty_count(&self) -> usize {
         self.overlay.iter().filter(|block| block.is_some()).count()
+    }
+
+    /// Captures the current overlay as a deterministic, read-only change set.
+    /// The snapshot is independent from later writes, restore, discard, or commit.
+    pub fn pending_changes(&self) -> ChangeSet {
+        let changes = self
+            .overlay
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| {
+                block
+                    .as_ref()
+                    .map(|block| (BlockId::new(index), block.clone()))
+            })
+            .collect();
+        ChangeSet { changes }
     }
 
     /// Summarizes the current overlay and optionally compares it to a checkpoint.
@@ -659,6 +697,46 @@ mod tests {
                 checkpoint_block_count: 3,
             }
         );
+    }
+
+    #[test]
+    fn pending_change_set_is_sorted_and_contains_current_overlay_values() {
+        let mut engine = Engine::new(4);
+        engine.write(id(3), block(3)).unwrap();
+        engine.write(id(1), block(1)).unwrap();
+
+        let changes = engine.pending_changes();
+
+        assert_eq!(changes.len(), 2);
+        assert!(!changes.is_empty());
+        assert_eq!(changes.as_slice(), &[(id(1), block(1)), (id(3), block(3))]);
+    }
+
+    #[test]
+    fn pending_change_set_is_empty_after_new_commit_and_discard() {
+        let mut engine = Engine::new(2);
+        assert!(engine.pending_changes().is_empty());
+
+        engine.write(id(0), block(4)).unwrap();
+        engine.commit();
+        assert!(engine.pending_changes().is_empty());
+
+        engine.write(id(1), block(5)).unwrap();
+        engine.discard();
+        assert!(engine.pending_changes().is_empty());
+    }
+
+    #[test]
+    fn pending_change_set_is_an_independent_snapshot() {
+        let mut engine = Engine::new(2);
+        engine.write(id(0), block(7)).unwrap();
+        let changes = engine.pending_changes();
+
+        engine.write(id(0), block(8)).unwrap();
+        engine.write(id(1), block(9)).unwrap();
+        engine.discard();
+
+        assert_eq!(changes.as_slice(), &[(id(0), block(7))]);
     }
 
     #[test]

@@ -99,3 +99,37 @@ Public technical record only.
 **Validation evidence:** The M0.5 baseline document records a successful final CI run, including formatting, 23 tests, Clippy with warnings denied, and the release baseline. That evidence does not claim post-merge CI or broader backend behavior.
 
 **Status:** Complete. M0.4 backend commit failure semantics remain undecided.
+
+## M1 closure
+
+**Integrated commit:** `aff5d726baa2135138c859a3751cd2474bdce606` (PR #9, merged to `main`).
+
+**Scope:** In-memory product contract, typed process-local checkpoint identities, deterministic state inspection, lifecycle scenario, and initial CLI with checkpoint management.
+
+**Validation:** PR CI run `37170485159` passed on head `63d721925af84cd1d93bc4615cba6574e9df6df3`. Post-merge push CI run `37170617406` passed on merged main SHA `aff5d726baa2135138c859a3751cd2474bdce606`.
+
+**Boundary:** No persistence, storage backend, filesystem or block-device integration, kernel or driver code, OS-specific integration, or networking was introduced.
+
+**Status:** Closed. M1 remains process-local and in-memory.
+
+## M1.5 pending change-set boundary
+
+**Problem:** The in-memory core could expose individual state queries and checkpoint differences, but it did not yet expose the current pending overlay as one deterministic, backend-neutral value.
+
+**Correction:** Added `ChangeSet` and `Engine::pending_changes()` as a read-only snapshot of present overlay entries, plus CLI inspection and executable coverage.
+
+**Intent:** Establish a narrow data boundary for future consumers without deciding persistence or backend commit-failure semantics.
+
+**Boundary:** No storage trait, persistence, filesystem, block device, kernel, driver, OS-specific integration, or networking.
+
+**Status:** Implementation added on `m1.5-change-set-boundary`; pre-PR audit found and corrected M1.5-001 below. Pending PR/CI validation remains required.
+
+## M1.5-001
+
+**Problem:** The first M1.5 commit omitted the closing brace for the new `ChangeSet` implementation, so the Rust source was syntactically invalid.
+
+**Detection:** Static pre-PR audit of the exact branch head `6cdfc36d15a805d691220c776605b71b93793309`.
+
+**Correction:** Closed the `ChangeSet` implementation before the `Engine` declaration. No scope expansion or semantic change was introduced.
+
+**Status:** Corrected before PR creation. CI must validate the corrected head.

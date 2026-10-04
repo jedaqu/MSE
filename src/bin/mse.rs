@@ -47,7 +47,7 @@ fn execute_line(
 
     match parts.as_slice() {
         [] => Ok(Some(String::new())),
-        ["help"] => Ok(Some("commands: new <blocks>, write <index> <byte>, read <index>, checkpoint, checkpoints, inspect [checkpoint-id], diff <checkpoint-id>, restore <checkpoint-id>, discard, commit, help, quit".to_owned())),
+        ["help"] => Ok(Some("commands: new <blocks>, write <index> <byte>, read <index>, changes, checkpoint, checkpoints, inspect [checkpoint-id], diff <checkpoint-id>, restore <checkpoint-id>, discard, commit, help, quit".to_owned())),
         ["new", count] => match count.parse::<usize>() {
             Ok(count) => {
                 *engine = Some(Engine::new(count));
@@ -74,6 +74,15 @@ fn execute_line(
                 }
                 (Err(error), _) | (_, Err(error)) => Err(error),
             }
+        }
+        ["changes"] => {
+            let changes = engine_ref(engine)?.pending_changes();
+            let entries: Vec<_> = changes
+                .as_slice()
+                .iter()
+                .map(|(id, block)| format!("({}, {})", id.index(), block.as_bytes()[0]))
+                .collect();
+            Ok(Some(format!("changes: [{}]", entries.join(", "))))
         }
         ["read", index] => match index.parse::<usize>() {
             Ok(index) => match engine_ref(engine)?.read(BlockId::new(index)) {
@@ -258,6 +267,16 @@ quit
         assert!(output.contains("error: create an engine first"));
         assert!(output.contains("error: block 9 is out of range (blocks=1)"));
         assert!(output.contains("read: block=0 value=0"));
+    }
+
+    #[test]
+    fn changes_command_reports_pending_overlay_values_in_order() {
+        let input = "new 3\nwrite 2 9\nwrite 0 4\nchanges\nquit\n";
+        let mut output = Vec::new();
+        run(Cursor::new(input), &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert!(output.contains("changes: [(0, 4), (2, 9)]"));
     }
 
     #[test]
