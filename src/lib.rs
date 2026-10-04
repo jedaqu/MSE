@@ -1,5 +1,7 @@
 pub const BLOCK_SIZE: usize = 4096;
 
+static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block([u8; BLOCK_SIZE]);
 
@@ -30,10 +32,61 @@ impl BlockId {
     }
 }
 
+/// Process-local identity for one immutable checkpoint snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CheckpointId(u64);
+
+impl CheckpointId {
+    /// Returns the numeric value of this process-local checkpoint identity.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
+    id: CheckpointId,
     block_count: usize,
     overlay: Vec<Option<Block>>,
+}
+
+impl Checkpoint {
+    /// Returns this snapshot's process-local identity.
+    pub fn id(&self) -> CheckpointId {
+        self.id
+    }
+}
+
+/// Relationship between the current overlay and an optional checkpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CheckpointRelation {
+    /// No checkpoint comparison was requested.
+    NotCompared,
+    /// The checkpoint is compatible; `changed_blocks` are overlay differences.
+    Compatible {
+        checkpoint_id: CheckpointId,
+        changed_blocks: Vec<BlockId>,
+    },
+    /// The checkpoint has a different block-count shape.
+    Incompatible {
+        checkpoint_id: CheckpointId,
+        checkpoint_block_count: usize,
+    },
+}
+
+/// Deterministic, read-only summary of the engine's current overlay state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateInspection {
+    /// Total fixed block count.
+    pub block_count: usize,
+    /// Number of present overlay entries.
+    pub dirty_count: usize,
+    /// Whether at least one overlay entry is present.
+    pub has_changes: bool,
+    /// IDs with present overlay entries, in ascending order.
+    pub affected_blocks: Vec<BlockId>,
+    /// Optional relationship to the requested checkpoint.
+    pub checkpoint: CheckpointRelation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,6 +111,7 @@ pub enum DiffError {
 }
 
 impl Engine {
+    /// Creates an in-memory engine with `blocks` zero-filled blocks.
     pub fn new(blocks: usize) -> Self {
         Self {
             base: vec![Block::zeroed(); blocks],
@@ -65,10 +119,13 @@ impl Engine {
         }
     }
 
+    /// Returns the fixed number of blocks in this engine.
     pub fn block_count(&self) -> usize {
         self.base.len()
     }
 
+    /// Reads a block, preferring its uncommitted overlay value over the base.
+    /// Returns `None` when `id` is outside the engine.
     pub fn read(&self, id: BlockId) -> Option<Block> {
         self.overlay
             .get(id.index())
@@ -76,6 +133,8 @@ impl Engine {
             .or_else(|| self.base.get(id.index()).cloned())
     }
 
+    /// Replaces the overlay value for `id` without changing the base.
+    /// An out-of-range ID returns an error and leaves the engine unchanged.
     pub fn write(&mut self, id: BlockId, block: Block) -> Result<(), WriteError> {
         let index = id.index();
 
@@ -90,13 +149,17 @@ impl Engine {
         Ok(())
     }
 
+    /// Captures an immutable copy of the overlay and its block-count shape.
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
+            id: CheckpointId(NEXT_CHECKPOINT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
             block_count: self.block_count(),
             overlay: self.overlay.clone(),
         }
     }
 
+    /// Replaces the overlay with a compatible checkpoint's overlay.
+    /// Compatibility is based on block count; base contents are not captured.
     pub fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), RestoreError> {
         if checkpoint.block_count != self.block_count()
             || checkpoint.overlay.len() != self.block_count()
@@ -110,14 +173,49 @@ impl Engine {
         Ok(())
     }
 
+    /// Clears all uncommitted overlay values, leaving the base untouched.
     pub fn discard(&mut self) {
         self.overlay.fill(None);
     }
 
+    /// Counts overlay entries, including writes equal to their base value.
     pub fn dirty_count(&self) -> usize {
         self.overlay.iter().filter(|block| block.is_some()).count()
     }
 
+    /// Summarizes the current overlay and optionally compares it to a checkpoint.
+    pub fn inspect(&self, checkpoint: Option<&Checkpoint>) -> StateInspection {
+        let affected_blocks: Vec<_> = self
+            .overlay
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| block.as_ref().map(|_| BlockId::new(index)))
+            .collect();
+        let checkpoint_relation = match checkpoint {
+            None => CheckpointRelation::NotCompared,
+            Some(saved) => match self.diff(saved) {
+                Ok(changed_blocks) => CheckpointRelation::Compatible {
+                    checkpoint_id: saved.id(),
+                    changed_blocks,
+                },
+                Err(DiffError::IncompatibleBlockCount { .. }) => CheckpointRelation::Incompatible {
+                    checkpoint_id: saved.id(),
+                    checkpoint_block_count: saved.block_count,
+                },
+            },
+        };
+
+        StateInspection {
+            block_count: self.block_count(),
+            dirty_count: affected_blocks.len(),
+            has_changes: !affected_blocks.is_empty(),
+            affected_blocks,
+            checkpoint: checkpoint_relation,
+        }
+    }
+
+    /// Applies every present overlay value to the in-memory base and clears it.
+    /// This operation has no backend and therefore defines no backend failure policy.
     pub fn commit(&mut self) {
         for (base, change) in self.base.iter_mut().zip(self.overlay.iter_mut()) {
             if let Some(block) = change.take() {
@@ -126,6 +224,8 @@ impl Engine {
         }
     }
 
+    /// Returns IDs whose overlay entries differ from the checkpoint overlay.
+    /// This compares overlay state, not effective block contents or base data.
     pub fn diff(&self, checkpoint: &Checkpoint) -> Result<Vec<BlockId>, DiffError> {
         if checkpoint.block_count != self.block_count()
             || checkpoint.overlay.len() != self.block_count()
@@ -222,6 +322,19 @@ mod tests {
         engine.write(id(3), block(6)).unwrap();
 
         assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0), id(3)]));
+    }
+
+    #[test]
+    fn same_as_base_write_is_dirty_and_diff_tracks_overlay_presence() {
+        let mut engine = Engine::new(1);
+        let checkpoint = engine.checkpoint();
+
+        engine.write(id(0), block(0)).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(0)));
+        assert_eq!(engine.block_count(), 1);
+        assert_eq!(engine.dirty_count(), 1);
+        assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0)]));
     }
 
     #[test]
@@ -441,6 +554,111 @@ mod tests {
         assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
         assert_eq!(engine.diff(&changed), Ok(vec![id(1)]));
         assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
+    }
+
+    #[test]
+    fn checkpoint_ids_are_distinct_and_restore_the_snapshot_they_identify() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(1)).unwrap();
+        let first = engine.checkpoint();
+        engine.write(id(0), block(2)).unwrap();
+        let second = engine.checkpoint();
+
+        assert_ne!(first.id(), second.id());
+        assert_ne!(first.id().value(), second.id().value());
+
+        engine.write(id(0), block(3)).unwrap();
+        engine.restore(&first).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(1)));
+        engine.restore(&second).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(2)));
+    }
+
+    #[test]
+    fn checkpoint_identity_remains_attached_after_commit_and_discard() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(4)).unwrap();
+        let before_commit = engine.checkpoint();
+        engine.commit();
+        let after_commit = engine.checkpoint();
+        assert_ne!(before_commit.id(), after_commit.id());
+
+        engine.write(id(0), block(5)).unwrap();
+        engine.discard();
+        engine.restore(&before_commit).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(4)));
+        engine.write(id(0), block(6)).unwrap();
+        engine.restore(&after_commit).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(4)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
+    fn repeated_restore_of_checkpoint_identity_is_stable() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(7)).unwrap();
+        let checkpoint = engine.checkpoint();
+        let identity = checkpoint.id();
+
+        engine.write(id(0), block(8)).unwrap();
+        engine.restore(&checkpoint).unwrap();
+        engine.write(id(0), block(9)).unwrap();
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(checkpoint.id(), identity);
+        assert_eq!(engine.read(id(0)), Some(block(7)));
+        assert_eq!(engine.dirty_count(), 1);
+    }
+
+    #[test]
+    fn inspection_reports_deterministic_state_and_checkpoint_relation() {
+        let mut engine = Engine::new(4);
+        let checkpoint = engine.checkpoint();
+        engine.write(id(3), block(3)).unwrap();
+        engine.write(id(1), block(1)).unwrap();
+
+        let inspection = engine.inspect(Some(&checkpoint));
+
+        assert_eq!(inspection.block_count, 4);
+        assert_eq!(inspection.dirty_count, 2);
+        assert!(inspection.has_changes);
+        assert_eq!(inspection.affected_blocks, vec![id(1), id(3)]);
+        assert_eq!(
+            inspection.checkpoint,
+            super::CheckpointRelation::Compatible {
+                checkpoint_id: checkpoint.id(),
+                changed_blocks: vec![id(1), id(3)],
+            }
+        );
+        assert_eq!(engine.inspect(Some(&checkpoint)), inspection);
+    }
+
+    #[test]
+    fn inspection_reports_clean_and_incompatible_states_explicitly() {
+        let engine = Engine::new(2);
+        let compatible = engine.checkpoint();
+        let incompatible = Engine::new(3).checkpoint();
+
+        let clean = engine.inspect(None);
+        assert_eq!(clean.block_count, 2);
+        assert_eq!(clean.dirty_count, 0);
+        assert!(!clean.has_changes);
+        assert!(clean.affected_blocks.is_empty());
+        assert_eq!(clean.checkpoint, super::CheckpointRelation::NotCompared);
+        assert_eq!(
+            engine.inspect(Some(&compatible)).checkpoint,
+            super::CheckpointRelation::Compatible {
+                checkpoint_id: compatible.id(),
+                changed_blocks: vec![],
+            }
+        );
+        assert_eq!(
+            engine.inspect(Some(&incompatible)).checkpoint,
+            super::CheckpointRelation::Incompatible {
+                checkpoint_id: incompatible.id(),
+                checkpoint_block_count: 3,
+            }
+        );
     }
 
     #[test]
