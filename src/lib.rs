@@ -307,6 +307,88 @@ mod tests {
     }
 
     #[test]
+    fn max_block_id_is_rejected_without_mutation() {
+        let mut engine = Engine::new(2);
+        engine.write(id(1), block(7)).unwrap();
+        let before = engine.clone();
+
+        assert_eq!(engine.read(BlockId::new(usize::MAX)), None);
+        assert_eq!(
+            engine.write(BlockId::new(usize::MAX), block(9)),
+            Err(WriteError::OutOfRange {
+                id: BlockId::new(usize::MAX),
+                block_count: 2,
+            })
+        );
+        assert_eq!(engine, before);
+    }
+
+    #[test]
+    fn invalid_write_preserves_existing_overlay_state() {
+        let mut engine = Engine::new(4);
+        engine.write(id(2), block(5)).unwrap();
+        let before = engine.clone();
+
+        assert!(engine.write(id(4), block(9)).is_err());
+
+        assert_eq!(engine, before);
+        assert_eq!(engine.read(id(2)), Some(block(5)));
+        assert_eq!(engine.dirty_count(), 1);
+    }
+
+    #[test]
+    fn dense_overlay_diff_reports_every_modified_block() {
+        let mut engine = Engine::new(8);
+        let checkpoint = engine.checkpoint();
+
+        for index in 0..engine.block_count() {
+            engine.write(id(index), block((index + 1) as u8)).unwrap();
+        }
+
+        let expected: Vec<_> = (0..engine.block_count()).map(id).collect();
+        assert_eq!(engine.diff(&checkpoint), Ok(expected));
+    }
+
+    #[test]
+    fn dense_restore_removes_all_changes_after_checkpoint() {
+        let mut engine = Engine::new(8);
+        engine.write(id(0), block(1)).unwrap();
+        engine.write(id(3), block(4)).unwrap();
+        let checkpoint = engine.checkpoint();
+
+        for index in 0..engine.block_count() {
+            engine.write(id(index), block(9)).unwrap();
+        }
+
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(1)));
+        assert_eq!(engine.read(id(3)), Some(block(4)));
+        for index in [1, 2, 4, 5, 6, 7] {
+            assert_eq!(engine.read(id(index)), Some(block(0)));
+        }
+        assert_eq!(engine.dirty_count(), 2);
+    }
+
+    #[test]
+    fn committed_state_survives_subsequent_discard_and_restore() {
+        let mut engine = Engine::new(3);
+        engine.write(id(1), block(6)).unwrap();
+        engine.commit();
+        let checkpoint = engine.checkpoint();
+
+        engine.write(id(0), block(8)).unwrap();
+        engine.discard();
+        engine.write(id(2), block(9)).unwrap();
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(engine.read(id(1)), Some(block(6)));
+        assert_eq!(engine.read(id(0)), Some(block(0)));
+        assert_eq!(engine.read(id(2)), Some(block(0)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
     fn write_checkpoint_write_discard_clears_all_overlay_changes() {
         let mut engine = Engine::new(2);
         engine.write(id(0), block(1)).unwrap();
