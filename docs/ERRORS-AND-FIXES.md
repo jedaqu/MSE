@@ -291,3 +291,22 @@ Public technical record only.
 **Post-merge validation:** Push run `37215913988` passed on integrated main SHA `d36a2d809484ddde73d9a1fe8a14c5d904fd7392`.
 
 **Status:** Closed.
+
+
+## M1.11 backend contract test harness
+
+**Problem:** `PersistenceBackend` defined the backend-neutral API, but behavioral guarantees were still duplicated mainly in the concrete `FileBackend` tests.
+
+**Correction:** Added a reusable backend contract harness that exercises the semantic guarantees through `PersistenceBackend` only. `FileBackend` now runs the shared behavioral suite.
+
+**Detection:** M1.11 pre-audit from `main` after M1.10 closure.
+
+**CI incident:** Run `37217706701` failed only the formatting gate; no test, Clippy or baseline execution occurred.
+
+**Correction:** Applied the exact rustfmt formatting corrections. Final implementation run `37217734416` passed formatting, tests, Clippy and the M0.5 baseline.
+
+**Post-merge validation:** Push run `37217776920` passed on integrated `main` SHA `7838748d4234a6881e3148a281f00febc247547a`.
+
+**Scope boundary:** Reopen/recovery lifecycle was intentionally not abstracted in M1.11 because the existing `PersistenceBackend` contract does not define a backend-neutral reconstruction mechanism.
+
+**Status:** Closed.
