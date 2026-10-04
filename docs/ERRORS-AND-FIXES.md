@@ -257,3 +257,20 @@ Public technical record only.
 **Boundary:** No persistent backend, storage trait, journal, filesystem/block-device integration, physical addressing, durable identifier encoding, recovery store, kernel/driver code, OS-specific adapter, or networking was introduced.
 
 **Status:** Closed. M1.8 establishes the minimum contract needed before the first concrete persistence experiment.
+
+## M1.9 first persistent backend
+
+**Integrated commit:** `c9eaffcf6496c3c1c61c8300b735f0c6c96983f9` (PR #20, merged to `main`).
+
+**Scope:** Experimental append-only host-file persistence with immutable object records, content deduplication, prepared roots, logical generations, COMMIT/DISCARD records, same-transaction reconciliation, recovery of incomplete tails, and explicit filesystem durability acknowledgement.
+
+**Contract:** M1.9 preserves the M1.7/M1.8 boundaries. `Committed` confirms logical publication; `Unknown` preserves the same transaction identity for reconciliation or retry; `Aborted` confirms that the attempted publication did not occur without invalidating the retained prepared state, so the same `TransactionId` may retry until explicit discard.
+
+**Validation:** Final PR CI run `37214459183` passed formatting, tests, Clippy, and the M0.5 performance baseline. Post-merge push CI run `37214956081` passed on integrated main SHA `c9eaffcf6496c3c1c61c8300b735f0c6c96983f9`.
+
+**Boundary:** This milestone remains an experimental host-file persistence backend. No OS-specific adapter, block-device integration, kernel/driver code, networking, or distributed coordination was introduced.
+
+**Public audit:** The implementation branch was reviewed for scope and public-boundary compliance before integration. The change was limited to `src/lib.rs` and the new `src/persistence.rs`.
+
+**Status:** Closed. M1.9 establishes the first persistent backend experiment; the next milestone must build on the existing core contract rather than redefine it.
+
