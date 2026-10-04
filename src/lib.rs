@@ -2,7 +2,6 @@ pub const BLOCK_SIZE: usize = 4096;
 
 use std::collections::HashMap;
 
-
 static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 static NEXT_OBJECT_STORE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
@@ -116,7 +115,6 @@ impl Default for ObjectStore {
         Self::new()
     }
 }
-
 
 /// Immutable mapping from logical block positions to shared object identities.
 #[derive(Clone, Debug, PartialEq, Eq)]

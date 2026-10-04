@@ -157,3 +157,14 @@ Public technical record only.
 **Correction:** Applied the exact rustfmt changes without semantic modification.
 
 **Status:** Corrected before creating the replacement validation PR.
+
+
+## M1.6-002
+
+**Problem:** The rustfmt correction in M1.6-001 still left two extra blank lines: one between the import and static declarations, and one between the `ObjectStore` `Default` implementation and the next item.
+
+**Detection:** PR #13 CI run `37171827171`, formatting step only.
+
+**Correction:** Removed the remaining extra blank lines. No semantic change.
+
+**Status:** Corrected before replacement validation PR.
