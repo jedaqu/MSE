@@ -122,7 +122,7 @@ Public technical record only.
 
 **Boundary:** No storage trait, persistence, filesystem, block device, kernel, driver, OS-specific integration, or networking.
 
-**Status:** Implementation added on `m1.5-change-set-boundary`; pre-PR audit found and corrected M1.5-001 below. Pending PR/CI validation remains required.
+**Status:** Closed. Integrated in PR #11 at `d8961e6187ea8f6a6029a80a1c3692304f7c7717`. PR CI `37170880817` and post-merge CI `37170912660` both passed.
 
 ## M1.5-001
 
@@ -133,3 +133,49 @@ Public technical record only.
 **Correction:** Closed the `ChangeSet` implementation before the `Engine` declaration. No scope expansion or semantic change was introduced.
 
 **Status:** Corrected before PR creation. CI must validate the corrected head.
+
+
+## M1.6 shared object and state-root foundation
+
+**Goal:** Establish the abstraction required to share unchanged immutable data between multiple state generations without duplicating every block payload.
+
+**Correction / improvement:** Added process-local `ObjectStoreId`, store-local `ObjectId`, deduplicating `ObjectStore`, immutable `StateRoot` mappings, explicit store-mismatch errors, and executable coverage for object reuse and root-level copy-on-write behavior.
+
+**Boundary:** The foundation is entirely in-memory. It introduces no persistence, physical-address model, filesystem/block-device integration, kernel/driver code, operating-system-specific integration, networking, or durability semantics.
+
+**Important limitation:** Numeric object identities are store-local. They are not yet content hashes or durable addresses.
+
+**Status:** Implementation complete on `m1.6-object-identity-foundation`; pre-PR audit and CI validation required.
+
+
+## M1.6-001
+
+**Problem:** The first M1.6 implementation head failed the formatting gate. Rustfmt required two spacing changes and multiline formatting for two long assertions.
+
+**Detection:** PR #12 CI run `37171772511`, formatting step only. Tests, Clippy, and the performance baseline were skipped because formatting failed first.
+
+**Correction:** Applied the exact rustfmt changes without semantic modification.
+
+**Status:** Corrected before creating the replacement validation PR.
+
+
+## M1.6-002
+
+**Problem:** The rustfmt correction in M1.6-001 still left two extra blank lines: one between the import and static declarations, and one between the `ObjectStore` `Default` implementation and the next item.
+
+**Detection:** PR #13 CI run `37171827171`, formatting step only.
+
+**Correction:** Removed the remaining extra blank lines. No semantic change.
+
+**Status:** Corrected before replacement validation PR.
+
+
+## M1.6-003
+
+**Problem:** The rustfmt gate still required the blank line between the `ObjectStore` `Default` implementation and the following `StateRoot` declaration to be removed.
+
+**Detection:** PR #13 CI run `37171827171`, exact formatting diff after M1.6-002.
+
+**Correction:** Removed that final rustfmt spacing difference. No semantic change.
+
+**Status:** Corrected before replacement validation PR.

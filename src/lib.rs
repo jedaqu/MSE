@@ -1,8 +1,11 @@
 pub const BLOCK_SIZE: usize = 4096;
 
-static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+use std::collections::HashMap;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+static NEXT_OBJECT_STORE_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Block([u8; BLOCK_SIZE]);
 
 impl Block {
@@ -29,6 +32,188 @@ impl BlockId {
 
     pub fn index(self) -> usize {
         self.0
+    }
+}
+
+/// Process-local identity for one in-memory object store.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ObjectStoreId(u64);
+
+impl ObjectStoreId {
+    /// Returns the numeric value of this process-local store identity.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
+/// Identity of one immutable object stored in an `ObjectStore`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ObjectId(u64);
+
+impl ObjectId {
+    /// Returns the numeric value of this store-local object identity.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
+/// In-memory object store that interns identical blocks once per store.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObjectStore {
+    id: ObjectStoreId,
+    objects: Vec<Block>,
+    index: HashMap<Block, ObjectId>,
+}
+
+impl ObjectStore {
+    /// Creates an empty in-memory object store.
+    pub fn new() -> Self {
+        Self {
+            id: ObjectStoreId(
+                NEXT_OBJECT_STORE_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            ),
+            objects: Vec::new(),
+            index: HashMap::new(),
+        }
+    }
+
+    /// Returns this store's process-local identity.
+    pub fn id(&self) -> ObjectStoreId {
+        self.id
+    }
+
+    /// Returns the number of unique immutable objects in this store.
+    pub fn len(&self) -> usize {
+        self.objects.len()
+    }
+
+    /// Returns whether this store contains no objects.
+    pub fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    /// Returns the identity for `block`, inserting it only when its content is new.
+    pub fn intern(&mut self, block: Block) -> ObjectId {
+        if let Some(id) = self.index.get(&block) {
+            return *id;
+        }
+
+        let id = ObjectId((self.objects.len() + 1) as u64);
+        self.objects.push(block.clone());
+        self.index.insert(block, id);
+        id
+    }
+
+    /// Resolves an object identity to its immutable block contents.
+    pub fn get(&self, id: ObjectId) -> Option<&Block> {
+        let index = usize::try_from(id.0).ok()?.checked_sub(1)?;
+        self.objects.get(index)
+    }
+}
+impl Default for ObjectStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+/// Immutable mapping from logical block positions to shared object identities.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateRoot {
+    store_id: ObjectStoreId,
+    objects: Vec<ObjectId>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StateRootError {
+    StoreMismatch {
+        root: ObjectStoreId,
+        store: ObjectStoreId,
+    },
+    BlockOutOfRange {
+        id: BlockId,
+        block_count: usize,
+    },
+    UnknownObject {
+        id: ObjectId,
+    },
+}
+
+impl StateRoot {
+    /// Builds a state root by interning every block into the supplied store.
+    pub fn from_blocks(store: &mut ObjectStore, blocks: &[Block]) -> Self {
+        let objects = blocks
+            .iter()
+            .cloned()
+            .map(|block| store.intern(block))
+            .collect();
+        Self {
+            store_id: store.id(),
+            objects,
+        }
+    }
+
+    /// Returns the object store identity used by this root.
+    pub fn store_id(&self) -> ObjectStoreId {
+        self.store_id
+    }
+
+    /// Returns the number of logical block positions in this root.
+    pub fn block_count(&self) -> usize {
+        self.objects.len()
+    }
+
+    /// Returns the shared object identity at a logical block position.
+    pub fn object_id(&self, id: BlockId) -> Option<ObjectId> {
+        self.objects.get(id.index()).copied()
+    }
+
+    /// Returns a new root that changes one position while retaining every other reference.
+    pub fn replace_object(
+        &self,
+        store: &ObjectStore,
+        id: BlockId,
+        object: ObjectId,
+    ) -> Result<Self, StateRootError> {
+        self.ensure_store(store)?;
+        if id.index() >= self.block_count() {
+            return Err(StateRootError::BlockOutOfRange {
+                id,
+                block_count: self.block_count(),
+            });
+        }
+        if store.get(object).is_none() {
+            return Err(StateRootError::UnknownObject { id: object });
+        }
+
+        let mut objects = self.objects.clone();
+        objects[id.index()] = object;
+        Ok(Self {
+            store_id: self.store_id,
+            objects,
+        })
+    }
+
+    /// Materializes this logical state from the shared object store.
+    pub fn materialize(&self, store: &ObjectStore) -> Result<Vec<Block>, StateRootError> {
+        self.ensure_store(store)?;
+        self.objects
+            .iter()
+            .map(|id| {
+                store
+                    .get(*id)
+                    .cloned()
+                    .ok_or(StateRootError::UnknownObject { id: *id })
+            })
+            .collect()
+    }
+
+    fn ensure_store(&self, store: &ObjectStore) -> Result<(), StateRootError> {
+        if self.store_id != store.id() {
+            return Err(StateRootError::StoreMismatch {
+                root: self.store_id,
+                store: store.id(),
+            });
+        }
+        Ok(())
     }
 }
 
@@ -287,7 +472,10 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, BlockId, DiffError, Engine, RestoreError, WriteError, BLOCK_SIZE};
+    use super::{
+        Block, BlockId, DiffError, Engine, ObjectId, ObjectStore, RestoreError, StateRoot,
+        StateRootError, WriteError, BLOCK_SIZE,
+    };
 
     fn block(value: u8) -> Block {
         Block::from_bytes([value; BLOCK_SIZE])
@@ -295,6 +483,88 @@ mod tests {
 
     fn id(index: usize) -> BlockId {
         BlockId::new(index)
+    }
+
+    #[test]
+    fn object_store_interns_identical_blocks_once() {
+        let mut store = ObjectStore::new();
+        let first = store.intern(block(7));
+        let second = store.intern(block(7));
+        let third = store.intern(block(8));
+
+        assert_eq!(first, second);
+        assert_ne!(first, third);
+        assert_eq!(store.len(), 2);
+        assert_eq!(store.get(first), Some(&block(7)));
+    }
+
+    #[test]
+    fn state_roots_share_unchanged_object_references() {
+        let mut store = ObjectStore::new();
+        let first = StateRoot::from_blocks(&mut store, &[block(1), block(2), block(3)]);
+        let replacement = store.intern(block(9));
+        let second = first.replace_object(&store, id(1), replacement).unwrap();
+
+        assert_eq!(first.object_id(id(0)), second.object_id(id(0)));
+        assert_eq!(first.object_id(id(2)), second.object_id(id(2)));
+        assert_ne!(first.object_id(id(1)), second.object_id(id(1)));
+        assert_eq!(store.len(), 4);
+        assert_eq!(
+            first.materialize(&store).unwrap(),
+            vec![block(1), block(2), block(3)]
+        );
+        assert_eq!(
+            second.materialize(&store).unwrap(),
+            vec![block(1), block(9), block(3)]
+        );
+    }
+
+    #[test]
+    fn unchanged_state_roots_can_be_distinct_without_duplicating_objects() {
+        let mut store = ObjectStore::new();
+        let first = StateRoot::from_blocks(&mut store, &[block(4), block(5)]);
+        let second = StateRoot::from_blocks(&mut store, &[block(4), block(5)]);
+
+        assert_eq!(first, second);
+        assert_eq!(first.object_id(id(0)), second.object_id(id(0)));
+        assert_eq!(first.object_id(id(1)), second.object_id(id(1)));
+        assert_eq!(store.len(), 2);
+    }
+
+    #[test]
+    fn state_root_rejects_a_different_object_store() {
+        let mut first_store = ObjectStore::new();
+        let root = StateRoot::from_blocks(&mut first_store, &[block(1)]);
+        let mut second_store = ObjectStore::new();
+        let object = second_store.intern(block(2));
+
+        assert_eq!(
+            root.replace_object(&second_store, id(0), object),
+            Err(StateRootError::StoreMismatch {
+                root: root.store_id(),
+                store: second_store.id(),
+            })
+        );
+    }
+
+    #[test]
+    fn state_root_rejects_unknown_object_and_out_of_range_position() {
+        let mut store = ObjectStore::new();
+        let root = StateRoot::from_blocks(&mut store, &[block(1)]);
+        let known = root.object_id(id(0)).unwrap();
+        let unknown = ObjectId(known.value() + 10);
+
+        assert_eq!(
+            root.replace_object(&store, id(0), unknown),
+            Err(StateRootError::UnknownObject { id: unknown })
+        );
+        assert_eq!(
+            root.replace_object(&store, id(1), known),
+            Err(StateRootError::BlockOutOfRange {
+                id: id(1),
+                block_count: 1,
+            })
+        );
     }
 
     #[test]
