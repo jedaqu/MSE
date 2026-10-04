@@ -28,14 +28,13 @@ pub trait PersistenceBackend {
     ) -> Result<PreparedState, Self::Error>;
 
     /// Returns the retained prepared state for a transaction, when present.
-    fn prepared(&self, transaction_id: TransactionId) -> Option<&PreparedState>;
+    fn prepared(&self, transaction_id: TransactionId) -> Option<PreparedState>;
 
     /// Attempts logical publication of a prepared generation.
     fn commit(&mut self, prepared: &PreparedState) -> Result<CommitOutcome, Self::Error>;
 
     /// Reconstructs the observable outcome for a transaction after recovery.
-    fn reconcile(&mut self, transaction_id: TransactionId)
-        -> Result<CommitOutcome, Self::Error>;
+    fn reconcile(&mut self, transaction_id: TransactionId) -> Result<CommitOutcome, Self::Error>;
 
     /// Explicitly discards a retained prepared transaction.
     fn discard(&mut self, transaction_id: TransactionId) -> Result<(), Self::Error>;
