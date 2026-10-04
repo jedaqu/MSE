@@ -191,29 +191,52 @@ mod tests {
 
     #[test]
     fn session_runs_product_lifecycle_commands() {
-        let input = concat!(
-            "new 2\n",
-            "write 0 12\n",
-            "checkpoint\n",
-            "write 1 34\n",
-            "diff 1\n",
-            "restore 1\n",
-            "read 0\n",
-            "read 1\n",
-            "commit\n",
-            "write 1 56\n",
-            "discard\n",
-            "inspect\n",
-            "quit\n"
+        let mut engine = None;
+        let mut checkpoints = BTreeMap::new();
+
+        assert_eq!(
+            execute_line("new 2", &mut engine, &mut checkpoints).unwrap(),
+            Some("created: blocks=2".to_owned())
         );
-        let mut output = Vec::new();
-        run(Cursor::new(input), &mut output).unwrap();
-        let output = String::from_utf8(output).unwrap();
-        assert!(output.contains("created: blocks=2"));
-        assert!(output.contains("diff: blocks=[1]"));
-        assert!(output.contains("read: block=0 value=12"));
-        assert!(output.contains("read: block=1 value=0"));
-        assert!(output.contains("state: blocks=2 dirty=0 changes=false affected=[]"));
+        execute_line("write 0 12", &mut engine, &mut checkpoints).unwrap();
+
+        let checkpoint = execute_line("checkpoint", &mut engine, &mut checkpoints)
+            .unwrap()
+            .unwrap();
+        let checkpoint_id = checkpoint
+            .strip_prefix("checkpoint: id=")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+
+        execute_line("write 1 34", &mut engine, &mut checkpoints).unwrap();
+        let diff =
+            execute_line(&format!("diff {checkpoint_id}"), &mut engine, &mut checkpoints)
+                .unwrap()
+                .unwrap();
+        assert_eq!(diff, "diff: blocks=[1]");
+
+        execute_line(
+            &format!("restore {checkpoint_id}"),
+            &mut engine,
+            &mut checkpoints,
+        )
+        .unwrap();
+        assert_eq!(
+            execute_line("read 0", &mut engine, &mut checkpoints).unwrap(),
+            Some("read: block=0 value=12".to_owned())
+        );
+        assert_eq!(
+            execute_line("read 1", &mut engine, &mut checkpoints).unwrap(),
+            Some("read: block=1 value=0".to_owned())
+        );
+
+        execute_line("commit", &mut engine, &mut checkpoints).unwrap();
+        execute_line("write 1 56", &mut engine, &mut checkpoints).unwrap();
+        execute_line("discard", &mut engine, &mut checkpoints).unwrap();
+        let inspection =
+            execute_line("inspect", &mut engine, &mut checkpoints).unwrap().unwrap();
+        assert!(inspection.contains("state: blocks=2 dirty=0 changes=false affected=[]"));
     }
 
     #[test]
