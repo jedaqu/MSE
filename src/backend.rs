@@ -144,11 +144,110 @@ pub(crate) mod contract_tests {
         assert_eq!(backend.read(BlockId::new(1)).unwrap(), Some(block(0)));
         assert!(backend.reconcile(discard_tx).is_err());
     }
+
+    /// Executes the backend-neutral recovery contract through a backend-specific
+    /// factory that creates fresh instances over the same durable state.
+    ///
+    /// The factory owns physical configuration; the harness validates only the
+    /// semantic state observed after reconstruction.
+    pub(crate) fn assert_backend_recovery_contract<B, F>(mut open: F)
+    where
+        B: PersistenceBackend,
+        B::Error: std::fmt::Debug,
+        F: FnMut() -> Result<B, B::Error>,
+    {
+        let committed_tx = TransactionId::new();
+        let abandoned_tx = TransactionId::new();
+
+        {
+            let mut backend = open().expect("initial backend open must succeed");
+            assert_eq!(backend.generation(), Generation::initial());
+            assert_eq!(backend.read(BlockId::new(0)).unwrap(), Some(block(0)));
+
+            let prepared = backend
+                .prepare(committed_tx, &changes(0, 7, 2))
+                .expect("committed transaction must prepare");
+            assert_eq!(
+                backend.commit(&prepared).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: committed_tx,
+                    generation: Generation::new(1),
+                }
+            );
+
+            backend
+                .prepare(abandoned_tx, &changes(1, 9, 2))
+                .expect("abandoned transaction must prepare");
+        }
+
+        {
+            let mut reopened = open().expect("reopened backend must succeed");
+            assert_eq!(reopened.generation(), Generation::new(1));
+            assert_eq!(reopened.read(BlockId::new(0)).unwrap(), Some(block(7)));
+            assert_eq!(reopened.read(BlockId::new(1)).unwrap(), Some(block(0)));
+
+            assert_eq!(
+                reopened.reconcile(committed_tx).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: committed_tx,
+                    generation: Generation::new(1),
+                }
+            );
+            assert_eq!(
+                reopened.reconcile(abandoned_tx).unwrap(),
+                CommitOutcome::Aborted {
+                    transaction_id: abandoned_tx,
+                }
+            );
+
+            let retry = reopened
+                .prepared(abandoned_tx)
+                .expect("Aborted recovery must retain prepared state");
+            assert_eq!(
+                reopened.commit(&retry).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: abandoned_tx,
+                    generation: Generation::new(2),
+                }
+            );
+            assert_eq!(reopened.generation(), Generation::new(2));
+            assert_eq!(reopened.read(BlockId::new(1)).unwrap(), Some(block(9)));
+        }
+
+        let discarded_tx = TransactionId::new();
+        {
+            let mut backend = open().expect("second reopened backend must succeed");
+            backend
+                .prepare(discarded_tx, &changes(0, 11, 2))
+                .expect("discard transaction must prepare");
+            backend
+                .discard(discarded_tx)
+                .expect("discard must succeed before reconstruction");
+        }
+
+        {
+            let mut reopened = open().expect("final reopened backend must succeed");
+            assert_eq!(reopened.generation(), Generation::new(2));
+            assert_eq!(reopened.read(BlockId::new(0)).unwrap(), Some(block(7)));
+            assert_eq!(reopened.read(BlockId::new(1)).unwrap(), Some(block(9)));
+            assert!(reopened.reconcile(discarded_tx).is_err());
+            assert_eq!(
+                reopened.reconcile(abandoned_tx).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: abandoned_tx,
+                    generation: Generation::new(2),
+                }
+            );
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{contract_tests::assert_backend_contract, PersistenceBackend};
+    use super::{
+        contract_tests::{assert_backend_contract, assert_backend_recovery_contract},
+        PersistenceBackend,
+    };
     use crate::persistence::{FileBackend, PersistenceError};
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -176,6 +275,15 @@ mod tests {
         assert_backend_contract(&mut backend);
 
         drop(backend);
+        fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn file_backend_satisfies_the_recovery_contract() {
+        let file = path();
+
+        assert_backend_recovery_contract(|| FileBackend::open(&file, 2)).unwrap();
+
         fs::remove_file(file).unwrap();
     }
 }
