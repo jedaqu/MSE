@@ -171,7 +171,9 @@ fn main() -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::run;
+    use super::{execute_line, run};
+    use mse_core::{BlockId, Engine};
+    use std::collections::BTreeMap;
     use std::io::Cursor;
 
     #[test]
@@ -210,5 +212,54 @@ mod tests {
         assert!(output.contains("error: create an engine first"));
         assert!(output.contains("error: block 9 is out of range (blocks=1)"));
         assert!(output.contains("read: block=0 value=0"));
+    }
+
+    #[test]
+    fn checkpoint_listing_reports_created_ids() {
+        let input = "new 2\ncheckpoint\ncheckpoint\ncheckpoints\nquit\n";
+        let mut output = Vec::new();
+        run(Cursor::new(input), &mut output).unwrap();
+        let output = String::from_utf8(output).unwrap();
+
+        assert_eq!(output.matches("checkpoint: id=").count(), 2);
+        assert!(output.contains("checkpoints: ["));
+    }
+
+    #[test]
+    fn inspect_can_compare_against_a_specific_checkpoint_id() {
+        let mut engine = Some(Engine::new(2));
+        let mut checkpoints = BTreeMap::new();
+
+        engine
+            .as_mut()
+            .unwrap()
+            .write(BlockId::new(0), mse_core::Block::zeroed())
+            .unwrap();
+
+        let checkpoint = execute_line("checkpoint", &mut engine, &mut checkpoints)
+            .unwrap()
+            .unwrap();
+        let checkpoint_id = checkpoint
+            .strip_prefix("checkpoint: id=")
+            .unwrap()
+            .parse::<u64>()
+            .unwrap();
+
+        engine
+            .as_mut()
+            .unwrap()
+            .write(BlockId::new(1), mse_core::Block::from_bytes([7; mse_core::BLOCK_SIZE]))
+            .unwrap();
+
+        let output = execute_line(
+            &format!("inspect {checkpoint_id}"),
+            &mut engine,
+            &mut checkpoints,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert!(output.contains("checkpoint: id="));
+        assert!(output.contains("compatible changed=[1]"));
     }
 }
