@@ -1187,6 +1187,7 @@ mod tests {
         assert_eq!(engine.dirty_count(), 0);
         assert_eq!(engine.read(id(0)), None);
     }
+
     #[test]
     fn transaction_ids_are_opaque_and_distinct() {
         let first = TransactionId::new();
