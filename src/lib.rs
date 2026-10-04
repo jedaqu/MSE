@@ -1,3 +1,5 @@
+pub mod persistence;
+
 pub const BLOCK_SIZE: usize = 4096;
 
 use std::collections::HashMap;
@@ -310,6 +312,9 @@ impl TransactionId {
     pub fn value(self) -> u64 {
         self.0
     }
+    pub(crate) const fn from_raw(value: u64) -> Self {
+        Self(value)
+    }
 }
 
 impl Default for TransactionId {
@@ -410,7 +415,10 @@ pub enum CommitOutcome {
         transaction_id: TransactionId,
         generation: Generation,
     },
-    /// The target generation is known not to have been published.
+    /// The target generation is known not to have been published for this
+    /// publication attempt. This does not invalidate the retained `PreparedState`;
+    /// the same `TransactionId` may retry publication until `discard` explicitly
+    /// removes the prepared state.
     Aborted { transaction_id: TransactionId },
     /// Publication status cannot be established yet.
     Unknown {
