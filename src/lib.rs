@@ -486,11 +486,11 @@ impl DurabilityObservation {
                 state,
             }),
             CommitOutcome::Aborted { transaction_id }
-            | CommitOutcome::Unknown {
-                transaction_id, ..
-            } => Err(DurabilityObservationError::CommitNotConfirmed {
-                transaction_id: *transaction_id,
-            }),
+            | CommitOutcome::Unknown { transaction_id, .. } => {
+                Err(DurabilityObservationError::CommitNotConfirmed {
+                    transaction_id: *transaction_id,
+                })
+            }
         }
     }
 
