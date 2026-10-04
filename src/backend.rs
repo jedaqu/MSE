@@ -420,7 +420,7 @@ pub(crate) mod contract_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        contract_tests::{assert_backend_contract, assert_backend_recovery_contract},
+        contract_tests::{assert_backend_contract, assert_backend_recovery_contract, assert_unknown_recovery_contract},
         PersistenceBackend,
     };
     use crate::persistence::{FileBackend, PersistenceError};
@@ -458,6 +458,15 @@ mod tests {
         let file = path();
 
         assert_backend_recovery_contract(|| FileBackend::open(&file, 2));
+
+        fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn file_backend_satisfies_the_unknown_recovery_contract() {
+        let file = path();
+
+        assert_unknown_recovery_contract(|| FileBackend::open(&file, 2));
 
         fs::remove_file(file).unwrap();
     }
