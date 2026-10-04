@@ -122,7 +122,7 @@ Public technical record only.
 
 **Boundary:** No storage trait, persistence, filesystem, block device, kernel, driver, OS-specific integration, or networking.
 
-**Status:** Implementation added on `m1.5-change-set-boundary`; pre-PR audit found and corrected M1.5-001 below. Pending PR/CI validation remains required.
+**Status:** Closed. Integrated in PR #11 at `d8961e6187ea8f6a6029a80a1c3692304f7c7717`. PR CI `37170880817` and post-merge CI `37170912660` both passed.
 
 ## M1.5-001
 
