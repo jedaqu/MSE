@@ -57,6 +57,38 @@ impl Checkpoint {
     }
 }
 
+/// Relationship between the current overlay and an optional checkpoint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CheckpointRelation {
+    /// No checkpoint comparison was requested.
+    NotCompared,
+    /// The checkpoint is compatible; `changed_blocks` are overlay differences.
+    Compatible {
+        checkpoint_id: CheckpointId,
+        changed_blocks: Vec<BlockId>,
+    },
+    /// The checkpoint has a different block-count shape.
+    Incompatible {
+        checkpoint_id: CheckpointId,
+        checkpoint_block_count: usize,
+    },
+}
+
+/// Deterministic, read-only summary of the engine's current overlay state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StateInspection {
+    /// Total fixed block count.
+    pub block_count: usize,
+    /// Number of present overlay entries.
+    pub dirty_count: usize,
+    /// Whether at least one overlay entry is present.
+    pub has_changes: bool,
+    /// IDs with present overlay entries, in ascending order.
+    pub affected_blocks: Vec<BlockId>,
+    /// Optional relationship to the requested checkpoint.
+    pub checkpoint: CheckpointRelation,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Engine {
     base: Vec<Block>,
@@ -149,6 +181,37 @@ impl Engine {
     /// Counts overlay entries, including writes equal to their base value.
     pub fn dirty_count(&self) -> usize {
         self.overlay.iter().filter(|block| block.is_some()).count()
+    }
+
+    /// Summarizes the current overlay and optionally compares it to a checkpoint.
+    pub fn inspect(&self, checkpoint: Option<&Checkpoint>) -> StateInspection {
+        let affected_blocks: Vec<_> = self
+            .overlay
+            .iter()
+            .enumerate()
+            .filter_map(|(index, block)| block.as_ref().map(|_| BlockId::new(index)))
+            .collect();
+        let checkpoint_relation = match checkpoint {
+            None => CheckpointRelation::NotCompared,
+            Some(saved) => match self.diff(saved) {
+                Ok(changed_blocks) => CheckpointRelation::Compatible {
+                    checkpoint_id: saved.id(),
+                    changed_blocks,
+                },
+                Err(DiffError::IncompatibleBlockCount { .. }) => CheckpointRelation::Incompatible {
+                    checkpoint_id: saved.id(),
+                    checkpoint_block_count: saved.block_count,
+                },
+            },
+        };
+
+        StateInspection {
+            block_count: self.block_count(),
+            dirty_count: affected_blocks.len(),
+            has_changes: !affected_blocks.is_empty(),
+            affected_blocks,
+            checkpoint: checkpoint_relation,
+        }
     }
 
     /// Applies every present overlay value to the in-memory base and clears it.
@@ -545,6 +608,57 @@ mod tests {
         assert_eq!(checkpoint.id(), identity);
         assert_eq!(engine.read(id(0)), Some(block(7)));
         assert_eq!(engine.dirty_count(), 1);
+    }
+
+    #[test]
+    fn inspection_reports_deterministic_state_and_checkpoint_relation() {
+        let mut engine = Engine::new(4);
+        let checkpoint = engine.checkpoint();
+        engine.write(id(3), block(3)).unwrap();
+        engine.write(id(1), block(1)).unwrap();
+
+        let inspection = engine.inspect(Some(&checkpoint));
+
+        assert_eq!(inspection.block_count, 4);
+        assert_eq!(inspection.dirty_count, 2);
+        assert!(inspection.has_changes);
+        assert_eq!(inspection.affected_blocks, vec![id(1), id(3)]);
+        assert_eq!(
+            inspection.checkpoint,
+            super::CheckpointRelation::Compatible {
+                checkpoint_id: checkpoint.id(),
+                changed_blocks: vec![id(1), id(3)],
+            }
+        );
+        assert_eq!(engine.inspect(Some(&checkpoint)), inspection);
+    }
+
+    #[test]
+    fn inspection_reports_clean_and_incompatible_states_explicitly() {
+        let engine = Engine::new(2);
+        let compatible = engine.checkpoint();
+        let incompatible = Engine::new(3).checkpoint();
+
+        let clean = engine.inspect(None);
+        assert_eq!(clean.block_count, 2);
+        assert_eq!(clean.dirty_count, 0);
+        assert!(!clean.has_changes);
+        assert!(clean.affected_blocks.is_empty());
+        assert_eq!(clean.checkpoint, super::CheckpointRelation::NotCompared);
+        assert_eq!(
+            engine.inspect(Some(&compatible)).checkpoint,
+            super::CheckpointRelation::Compatible {
+                checkpoint_id: compatible.id(),
+                changed_blocks: vec![],
+            }
+        );
+        assert_eq!(
+            engine.inspect(Some(&incompatible)).checkpoint,
+            super::CheckpointRelation::Incompatible {
+                checkpoint_id: incompatible.id(),
+                checkpoint_block_count: 3,
+            }
+        );
     }
 
     #[test]

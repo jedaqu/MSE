@@ -15,6 +15,7 @@ not define persistence or future backend failure behavior.
 | `commit()` | Moves all present overlay values into the in-memory base and clears those entries. This describes only the infallible memory operation; it makes no choice about future backend atomicity or partial progress. |
 | `dirty_count()` | Counts present overlay entries. A block written with bytes equal to its base still counts as dirty. |
 | `diff(checkpoint)` | Returns IDs whose optional overlay entries differ from the checkpoint overlay, in ascending block order. It does not compare base contents or effective read values. Incompatible checkpoints return `DiffError`. |
+| `inspect(checkpoint)` | Returns total and dirty counts, whether changes exist, affected IDs in ascending order, and an explicit checkpoint relationship. It does not mutate state. |
 
 Checkpoints are independent snapshots: later writes, commit, and discard do not
 mutate an already-created checkpoint. Restore may be repeated while the
