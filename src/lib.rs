@@ -1275,5 +1275,4 @@ mod tests {
         assert_eq!(aborted.transaction_id(), transaction_id);
         assert_eq!(unknown.transaction_id(), transaction_id);
     }
-
 }
