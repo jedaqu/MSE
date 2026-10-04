@@ -243,4 +243,17 @@ Public technical record only.
 
 **Boundary:** No storage trait, persistent object store, journal, filesystem/block-device integration, physical addressing, durable transaction encoding, recovery database, kernel/driver code, OS-specific adapter, or networking.
 
-**Status:** M1.8 implementation prepared; PR/CI validation required before closure.
+**Status:** Closed. Integrated in PR #18 at `7ea2ab7f594f2a8d0862cb62c7bdb1ff90c90831`. PR CI `37209513008` and post-merge CI `37209545645` both passed.
+
+
+## M1.8 closure
+
+**Integrated commit:** `7ea2ab7f594f2a8d0862cb62c7bdb1ff90c90831` (PR #18, merged to `main`).
+
+**Scope:** Backend-neutral persistence/durability boundary. `CommitOutcome::Unknown` now retains target generation, and durability requirements/observations are explicitly separated from logical publication.
+
+**Validation:** PR CI run `37209513008` passed on head `daad9629c3095d4c7a0687a7be423b9d8be713ca`. Post-merge push CI run `37209545645` passed on merged main SHA `7ea2ab7f594f2a8d0862cb62c7bdb1ff90c90831`.
+
+**Boundary:** No persistent backend, storage trait, journal, filesystem/block-device integration, physical addressing, durable identifier encoding, recovery store, kernel/driver code, OS-specific adapter, or networking was introduced.
+
+**Status:** Closed. M1.8 establishes the minimum contract needed before the first concrete persistence experiment.
