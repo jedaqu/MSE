@@ -87,14 +87,18 @@ pub(crate) mod contract_tests {
         assert_eq!(backend.generation(), Generation::initial());
         assert_eq!(backend.read(BlockId::new(0)).unwrap(), Some(block(0)));
 
-        let retained = backend.prepared(tx).expect("prepared state must be retained");
+        let retained = backend
+            .prepared(tx)
+            .expect("prepared state must be retained");
         assert_eq!(retained, prepared);
 
         assert_eq!(
             backend.reconcile(tx).unwrap(),
             CommitOutcome::Aborted { transaction_id: tx }
         );
-        let retry = backend.prepared(tx).expect("Aborted must retain prepared state");
+        let retry = backend
+            .prepared(tx)
+            .expect("Aborted must retain prepared state");
         assert_eq!(retry, prepared);
 
         let committed = backend.commit(&retry).unwrap();
