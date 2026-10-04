@@ -1,3 +1,5 @@
+pub mod persistence;
+
 pub const BLOCK_SIZE: usize = 4096;
 
 use std::collections::HashMap;
@@ -44,6 +46,10 @@ impl ObjectStoreId {
     /// Returns the numeric value of this process-local store identity.
     pub fn value(self) -> u64 {
         self.0
+    }
+
+    pub(crate) const fn from_raw(value: u64) -> Self {
+        Self(value)
     }
 }
 
