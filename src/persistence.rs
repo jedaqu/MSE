@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, DurabilityObservationError,
+    PersistenceBackend,
     DurabilityState, Generation, PreparedState, TransactionId, BLOCK_SIZE,
 };
 
@@ -668,6 +669,56 @@ fn checksum(
         hash = hash.wrapping_mul(0x100000001b3);
     }
     hash
+}
+
+impl PersistenceBackend for FileBackend {
+    type Error = PersistenceError;
+
+    fn block_count(&self) -> usize {
+        self.block_count()
+    }
+
+    fn generation(&self) -> Generation {
+        self.generation()
+    }
+
+    fn read(&self, id: BlockId) -> Result<Option<Block>, Self::Error> {
+        self.read(id)
+    }
+
+    fn prepare(
+        &mut self,
+        transaction_id: TransactionId,
+        changes: &ChangeSet,
+    ) -> Result<PreparedState, Self::Error> {
+        self.prepare(transaction_id, changes)
+    }
+
+    fn prepared(&self, transaction_id: TransactionId) -> Option<&PreparedState> {
+        self.prepared(transaction_id)
+    }
+
+    fn commit(&mut self, prepared: &PreparedState) -> Result<CommitOutcome, Self::Error> {
+        self.commit(prepared)
+    }
+
+    fn reconcile(
+        &mut self,
+        transaction_id: TransactionId,
+    ) -> Result<CommitOutcome, Self::Error> {
+        self.reconcile(transaction_id)
+    }
+
+    fn discard(&mut self, transaction_id: TransactionId) -> Result<(), Self::Error> {
+        self.discard(transaction_id)
+    }
+
+    fn acknowledge_durability(
+        &mut self,
+        outcome: &CommitOutcome,
+    ) -> Result<DurabilityObservation, Self::Error> {
+        self.acknowledge_durability(outcome)
+    }
 }
 
 #[cfg(test)]
