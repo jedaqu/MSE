@@ -193,4 +193,39 @@ Public technical record only.
 
 **Boundary:** No persistence or backend implementation. The existing in-memory `Engine::commit()` remains unchanged and is still an infallible memory-only operation.
 
-**Status:** M1.7 implementation branch prepared; PR/CI validation required before closure.
+**Status:** Closed. Integrated in PR #16 at `d812001129d6c4a65c1bacec07cdca610a02af57`. PR CI `37174196400` and post-merge CI `37174229249` both passed.
+
+
+## M1.7-001
+
+**Problem:** The first M1.7 PR head failed the formatting gate because the final test-module closing region contained an extra blank line.
+
+**Detection:** PR #16 CI run `37174135924`, job `111353099913`. The formatting step failed; tests, Clippy, and the performance baseline were skipped.
+
+**Correction:** Removed the extra blank line without changing semantics or scope.
+
+**Status:** Corrected before final PR validation.
+
+
+## M1.7-002
+
+**Problem:** The second M1.7 PR head failed the formatting gate because the Rust source was missing its final newline.
+
+**Detection:** PR #16 CI run `37174167157`, job `111353193713`. The formatting step failed; tests, Clippy, and the performance baseline were skipped.
+
+**Correction:** Restored the final newline only. No semantic change.
+
+**Status:** Corrected before final PR validation.
+
+
+## M1.7 closure
+
+**Integrated commit:** `d812001129d6c4a65c1bacec07cdca610a02af57` (PR #16, merged to `main`).
+
+**Scope:** Backend-neutral transaction identity, logical generations, prepared transaction state, observable commit outcomes, atomic visibility rules, pending-state retention, durability boundary, and reconciliation/retry semantics.
+
+**Validation:** Final PR CI run `37174196400` passed on head `3c7d442bdbd8885142f8b6404391655f59dd01f5`. Post-merge push CI run `37174229249` passed on merged main SHA `d812001129d6c4a65c1bacec07cdca610a02af57`.
+
+**Boundary:** No persistent backend, storage trait, journal, filesystem/block-device integration, kernel/driver code, OS-specific adapter, or networking was introduced. `TransactionId` and `Generation` remain process-local/logical identities at this stage.
+
+**Status:** Closed. M1.7 establishes the contract gate for the next backend-neutral persistence/durability boundary.
