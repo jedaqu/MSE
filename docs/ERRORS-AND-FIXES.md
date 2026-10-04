@@ -274,3 +274,20 @@ Public technical record only.
 
 **Status:** Closed. M1.9 establishes the first persistent backend experiment; the next milestone must build on the existing core contract rather than redefine it.
 
+
+
+## M1.10 backend-neutral persistence boundary
+
+**Problem:** M1.9 validated a concrete `FileBackend`, but the public core did not yet expose an explicit backend-neutral persistence boundary for future implementations.
+
+**Correction:** Added `PersistenceBackend` to express logical block access, preparation, publication, reconciliation, discard, generation state and durability observation without exposing host-file details. Adapted `FileBackend` to implement the contract and changed trait-level `prepared()` access to return an owned `PreparedState`.
+
+**Detection:** M1.10 implementation audit before PR #22.
+
+**CI incident:** Run `37215796545` failed only the formatting gate. Rustfmt required formatting changes in `src/backend.rs` and `src/persistence.rs`. No tests, Clippy or baseline execution occurred in that run.
+
+**Correction:** Applied the exact rustfmt changes and retained the intended API-only scope. Final branch validation run `37215849872` passed formatting, tests, Clippy and the M0.5 performance baseline.
+
+**Post-merge validation:** Push run `37215913988` passed on integrated main SHA `d36a2d809484ddde73d9a1fe8a14c5d904fd7392`.
+
+**Status:** Closed.
