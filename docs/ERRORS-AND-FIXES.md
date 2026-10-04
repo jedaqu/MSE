@@ -168,3 +168,14 @@ Public technical record only.
 **Correction:** Removed the remaining extra blank lines. No semantic change.
 
 **Status:** Corrected before replacement validation PR.
+
+
+## M1.6-003
+
+**Problem:** The rustfmt gate still required the blank line between the `ObjectStore` `Default` implementation and the following `StateRoot` declaration to be removed.
+
+**Detection:** PR #13 CI run `37171827171`, exact formatting diff after M1.6-002.
+
+**Correction:** Removed that final rustfmt spacing difference. No semantic change.
+
+**Status:** Corrected before replacement validation PR.

@@ -115,7 +115,6 @@ impl Default for ObjectStore {
         Self::new()
     }
 }
-
 /// Immutable mapping from logical block positions to shared object identities.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StateRoot {
