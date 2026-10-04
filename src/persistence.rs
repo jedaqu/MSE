@@ -4,8 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::{
     Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, DurabilityObservationError,
-    PersistenceBackend,
-    DurabilityState, Generation, PreparedState, TransactionId, BLOCK_SIZE,
+    DurabilityState, Generation, PersistenceBackend, PreparedState, TransactionId, BLOCK_SIZE,
 };
 
 const MAGIC: &[u8; 8] = b"MSEF0001";
@@ -694,18 +693,15 @@ impl PersistenceBackend for FileBackend {
         self.prepare(transaction_id, changes)
     }
 
-    fn prepared(&self, transaction_id: TransactionId) -> Option<&PreparedState> {
-        self.prepared(transaction_id)
+    fn prepared(&self, transaction_id: TransactionId) -> Option<PreparedState> {
+        self.prepared(transaction_id).cloned()
     }
 
     fn commit(&mut self, prepared: &PreparedState) -> Result<CommitOutcome, Self::Error> {
         self.commit(prepared)
     }
 
-    fn reconcile(
-        &mut self,
-        transaction_id: TransactionId,
-    ) -> Result<CommitOutcome, Self::Error> {
+    fn reconcile(&mut self, transaction_id: TransactionId) -> Result<CommitOutcome, Self::Error> {
         self.reconcile(transaction_id)
     }
 
