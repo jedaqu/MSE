@@ -44,3 +44,19 @@ The repository now defines backend-neutral transaction vocabulary without implem
 - Durability is a separate boundary from logical publication and is not implemented by the current in-memory core.
 
 This contract is intentionally backend-neutral. No storage trait, persistence layer, journal, filesystem, block device, kernel, driver, operating-system-specific integration, or network protocol is introduced by M1.7.
+
+
+## M1.8 persistence and durability boundary
+
+M1.8 adds only backend-neutral value types for separating logical publication from physical durability.
+
+- `DurabilityRequirement::Publication` means the caller needs a confirmed logical publication.
+- `DurabilityRequirement::Durable` means the caller also requires a positive durability acknowledgement.
+- `DurabilityState::Pending` means durability has not been established.
+- `DurabilityState::Durable` means durability is positively established.
+- `DurabilityState::Unknown` means a durability attempt occurred but its final result is not established.
+- `DurabilityObservation` binds a durability state to the same `TransactionId` and published `Generation`.
+- A durability observation can only be created from `CommitOutcome::Committed`. `Aborted` and `Unknown` publication outcomes do not authorize a durability claim.
+- `CommitOutcome::Unknown` now retains the target generation as well as the transaction identity, so reconciliation has a stable logical target even when publication confirmation is lost.
+
+This is a contract boundary only. No persistence trait, journal, filesystem, block device, physical address, durable identifier encoding, recovery store, kernel/driver integration, operating-system adapter, or network coordination is implemented.
