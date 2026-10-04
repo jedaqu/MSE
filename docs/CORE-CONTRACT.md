@@ -18,6 +18,10 @@ not define persistence or future backend failure behavior.
 | `diff(checkpoint)` | Returns IDs whose optional overlay entries differ from the checkpoint overlay, in ascending block order. It does not compare base contents or effective read values. Incompatible checkpoints return `DiffError`. |
 | `inspect(checkpoint)` | Returns total and dirty counts, whether changes exist, affected IDs in ascending order, and an explicit checkpoint relationship. It does not mutate state. |
 
+## Shared object model
+
+`ObjectStore` interns identical immutable blocks once within a process-local store. `StateRoot` maps logical block positions to `ObjectId` references, so a new root can replace one reference while reusing every unchanged object. Roots and objects are intentionally in-memory and store-local in this phase; no physical-address, persistence, or durability semantics are defined.
+
 Checkpoints are independent snapshots: later writes, commit, and discard do not
 mutate an already-created checkpoint. Restore may be repeated while the
 checkpoint remains compatible with the engine's fixed block count.

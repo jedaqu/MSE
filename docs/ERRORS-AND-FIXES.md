@@ -133,3 +133,16 @@ Public technical record only.
 **Correction:** Closed the `ChangeSet` implementation before the `Engine` declaration. No scope expansion or semantic change was introduced.
 
 **Status:** Corrected before PR creation. CI must validate the corrected head.
+
+
+## M1.6 shared object and state-root foundation
+
+**Goal:** Establish the abstraction required to share unchanged immutable data between multiple state generations without duplicating every block payload.
+
+**Correction / improvement:** Added process-local `ObjectStoreId`, store-local `ObjectId`, deduplicating `ObjectStore`, immutable `StateRoot` mappings, explicit store-mismatch errors, and executable coverage for object reuse and root-level copy-on-write behavior.
+
+**Boundary:** The foundation is entirely in-memory. It introduces no persistence, physical-address model, filesystem/block-device integration, kernel/driver code, operating-system-specific integration, networking, or durability semantics.
+
+**Important limitation:** Numeric object identities are store-local. They are not yet content hashes or durable addresses.
+
+**Status:** Implementation complete on `m1.6-object-identity-foundation`; pre-PR audit and CI validation required.
