@@ -1,5 +1,7 @@
 pub const BLOCK_SIZE: usize = 4096;
 
+static NEXT_CHECKPOINT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Block([u8; BLOCK_SIZE]);
 
@@ -30,10 +32,29 @@ impl BlockId {
     }
 }
 
+/// Process-local identity for one immutable checkpoint snapshot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CheckpointId(u64);
+
+impl CheckpointId {
+    /// Returns the numeric value of this process-local checkpoint identity.
+    pub fn value(self) -> u64 {
+        self.0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
+    id: CheckpointId,
     block_count: usize,
     overlay: Vec<Option<Block>>,
+}
+
+impl Checkpoint {
+    /// Returns this snapshot's process-local identity.
+    pub fn id(&self) -> CheckpointId {
+        self.id
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -99,6 +120,7 @@ impl Engine {
     /// Captures an immutable copy of the overlay and its block-count shape.
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
+            id: CheckpointId(NEXT_CHECKPOINT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed)),
             block_count: self.block_count(),
             overlay: self.overlay.clone(),
         }
@@ -469,6 +491,60 @@ mod tests {
         assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
         assert_eq!(engine.diff(&changed), Ok(vec![id(1)]));
         assert_eq!(engine.diff(&clean), Ok(vec![id(1)]));
+    }
+
+    #[test]
+    fn checkpoint_ids_are_distinct_and_restore_the_snapshot_they_identify() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(1)).unwrap();
+        let first = engine.checkpoint();
+        engine.write(id(0), block(2)).unwrap();
+        let second = engine.checkpoint();
+
+        assert_ne!(first.id(), second.id());
+        assert_ne!(first.id().value(), second.id().value());
+
+        engine.write(id(0), block(3)).unwrap();
+        engine.restore(&first).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(1)));
+        engine.restore(&second).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(2)));
+    }
+
+    #[test]
+    fn checkpoint_identity_remains_attached_after_commit_and_discard() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(4)).unwrap();
+        let before_commit = engine.checkpoint();
+        engine.commit();
+        let after_commit = engine.checkpoint();
+        assert_ne!(before_commit.id(), after_commit.id());
+
+        engine.write(id(0), block(5)).unwrap();
+        engine.discard();
+        engine.restore(&before_commit).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(4)));
+        engine.write(id(0), block(6)).unwrap();
+        engine.restore(&after_commit).unwrap();
+        assert_eq!(engine.read(id(0)), Some(block(4)));
+        assert_eq!(engine.dirty_count(), 0);
+    }
+
+    #[test]
+    fn repeated_restore_of_checkpoint_identity_is_stable() {
+        let mut engine = Engine::new(1);
+        engine.write(id(0), block(7)).unwrap();
+        let checkpoint = engine.checkpoint();
+        let identity = checkpoint.id();
+
+        engine.write(id(0), block(8)).unwrap();
+        engine.restore(&checkpoint).unwrap();
+        engine.write(id(0), block(9)).unwrap();
+        engine.restore(&checkpoint).unwrap();
+
+        assert_eq!(checkpoint.id(), identity);
+        assert_eq!(engine.read(id(0)), Some(block(7)));
+        assert_eq!(engine.dirty_count(), 1);
     }
 
     #[test]
