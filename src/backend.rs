@@ -50,7 +50,8 @@ pub trait PersistenceBackend {
 pub(crate) mod contract_tests {
     use super::PersistenceBackend;
     use crate::{
-        Block, BlockId, ChangeSet, CommitOutcome, Engine, Generation, TransactionId, BLOCK_SIZE,
+        Block, BlockId, ChangeSet, CommitOutcome, DurabilityObservation, Engine, Generation,
+        PreparedState, TransactionId, BLOCK_SIZE,
     };
 
     fn block(value: u8) -> Block {
@@ -240,12 +241,185 @@ pub(crate) mod contract_tests {
             );
         }
     }
+    #[derive(Clone, Copy)]
+    enum UnknownInjectionMode {
+        BeforePublication,
+        AfterPublication,
+    }
+
+    /// Test-only adapter used to deterministically exercise the established
+    /// Unknown outcome without adding a production fault-injection API.
+    struct UnknownOnceBackend<B> {
+        inner: B,
+        mode: UnknownInjectionMode,
+        injected: bool,
+    }
+
+    impl<B> PersistenceBackend for UnknownOnceBackend<B>
+    where
+        B: PersistenceBackend,
+    {
+        type Error = B::Error;
+
+        fn block_count(&self) -> usize {
+            self.inner.block_count()
+        }
+
+        fn generation(&self) -> Generation {
+            self.inner.generation()
+        }
+
+        fn read(&self, id: BlockId) -> Result<Option<Block>, Self::Error> {
+            self.inner.read(id)
+        }
+
+        fn prepare(
+            &mut self,
+            transaction_id: TransactionId,
+            changes: &ChangeSet,
+        ) -> Result<PreparedState, Self::Error> {
+            self.inner.prepare(transaction_id, changes)
+        }
+
+        fn prepared(&self, transaction_id: TransactionId) -> Option<PreparedState> {
+            self.inner.prepared(transaction_id)
+        }
+
+        fn commit(&mut self, prepared: &PreparedState) -> Result<CommitOutcome, Self::Error> {
+            if !self.injected {
+                self.injected = true;
+                return match self.mode {
+                    UnknownInjectionMode::BeforePublication => Ok(CommitOutcome::Unknown {
+                        transaction_id: prepared.transaction_id(),
+                        generation: prepared.target_generation(),
+                    }),
+                    UnknownInjectionMode::AfterPublication => match self.inner.commit(prepared)? {
+                        CommitOutcome::Committed {
+                            transaction_id,
+                            generation,
+                        } => Ok(CommitOutcome::Unknown {
+                            transaction_id,
+                            generation,
+                        }),
+                        other => Ok(other),
+                    },
+                };
+            }
+
+            self.inner.commit(prepared)
+        }
+
+        fn reconcile(
+            &mut self,
+            transaction_id: TransactionId,
+        ) -> Result<CommitOutcome, Self::Error> {
+            self.inner.reconcile(transaction_id)
+        }
+
+        fn discard(&mut self, transaction_id: TransactionId) -> Result<(), Self::Error> {
+            self.inner.discard(transaction_id)
+        }
+
+        fn acknowledge_durability(
+            &mut self,
+            outcome: &CommitOutcome,
+        ) -> Result<DurabilityObservation, Self::Error> {
+            self.inner.acknowledge_durability(outcome)
+        }
+    }
+
+    /// Verifies both possible resolutions of an uncertain publication:
+    /// recovery may establish that publication did not occur, or that it did.
+    pub(crate) fn assert_unknown_recovery_contract<B, F>(mut open: F)
+    where
+        B: PersistenceBackend,
+        B::Error: std::fmt::Debug,
+        F: FnMut() -> Result<B, B::Error>,
+    {
+        let aborted_tx = TransactionId::new();
+        {
+            let backend = open().expect("initial backend open must succeed");
+            let mut backend = UnknownOnceBackend {
+                inner: backend,
+                mode: UnknownInjectionMode::BeforePublication,
+                injected: false,
+            };
+
+            let prepared = backend
+                .prepare(aborted_tx, &changes(0, 7, 2))
+                .expect("uncertain transaction must prepare");
+
+            assert_eq!(
+                backend.commit(&prepared).unwrap(),
+                CommitOutcome::Unknown {
+                    transaction_id: aborted_tx,
+                    generation: Generation::new(1),
+                }
+            );
+            assert_eq!(
+                backend.reconcile(aborted_tx).unwrap(),
+                CommitOutcome::Aborted {
+                    transaction_id: aborted_tx,
+                }
+            );
+
+            let retained = backend
+                .prepared(aborted_tx)
+                .expect("Unknown must retain prepared state until resolution");
+            assert_eq!(retained, prepared);
+
+            assert_eq!(
+                backend.commit(&retained).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: aborted_tx,
+                    generation: Generation::new(1),
+                }
+            );
+        }
+
+        let committed_tx = TransactionId::new();
+        {
+            let backend = open().expect("second backend open must succeed");
+            let mut backend = UnknownOnceBackend {
+                inner: backend,
+                mode: UnknownInjectionMode::AfterPublication,
+                injected: false,
+            };
+
+            let prepared = backend
+                .prepare(committed_tx, &changes(1, 9, 2))
+                .expect("uncertain committed transaction must prepare");
+
+            assert_eq!(
+                backend.commit(&prepared).unwrap(),
+                CommitOutcome::Unknown {
+                    transaction_id: committed_tx,
+                    generation: Generation::new(2),
+                }
+            );
+            assert_eq!(
+                backend.reconcile(committed_tx).unwrap(),
+                CommitOutcome::Committed {
+                    transaction_id: committed_tx,
+                    generation: Generation::new(2),
+                }
+            );
+            assert!(
+                backend.prepared(committed_tx).is_none(),
+                "reconciled committed publication must not retain a duplicate prepared transaction"
+            );
+            assert_eq!(backend.generation(), Generation::new(2));
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        contract_tests::{assert_backend_contract, assert_backend_recovery_contract},
+        contract_tests::{
+            assert_backend_contract, assert_backend_recovery_contract,
+            assert_unknown_recovery_contract,
+        },
         PersistenceBackend,
     };
     use crate::persistence::{FileBackend, PersistenceError};
@@ -283,6 +457,15 @@ mod tests {
         let file = path();
 
         assert_backend_recovery_contract(|| FileBackend::open(&file, 2));
+
+        fs::remove_file(file).unwrap();
+    }
+
+    #[test]
+    fn file_backend_satisfies_the_unknown_recovery_contract() {
+        let file = path();
+
+        assert_unknown_recovery_contract(|| FileBackend::open(&file, 2));
 
         fs::remove_file(file).unwrap();
     }
