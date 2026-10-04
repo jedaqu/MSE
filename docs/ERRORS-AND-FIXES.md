@@ -179,3 +179,18 @@ Public technical record only.
 **Correction:** Removed that final rustfmt spacing difference. No semantic change.
 
 **Status:** Corrected before replacement validation PR.
+
+
+## M1.7 commit and recovery contract
+
+**Pre-change audit:** `main` was verified at `3126be9f575bda86f0f3e43176ba00309342fabc`, with zero open pull requests. The exact post-merge push workflow for that SHA was run `37172014757`; its `rust` job `111346718476` passed formatting, tests, Clippy, and the M0.5 baseline.
+
+**Scope:** Formalize transaction identity, logical generations, prepared state, observable commit outcomes, atomic visibility, pending-state retention, durability boundary, and reconciliation/retry rules.
+
+**Implementation:** Added backend-neutral `TransactionId`, `Generation`, `PreparedState`, `PrepareError`, and `CommitOutcome` types with executable contract tests.
+
+**Failure model:** `Committed` means publication is known to have occurred; `Aborted` means publication is known not to have occurred; `Unknown` means the publication result cannot yet be established. Unknown transactions retain the same transaction identity for reconciliation or retry.
+
+**Boundary:** No persistence or backend implementation. The existing in-memory `Engine::commit()` remains unchanged and is still an infallible memory-only operation.
+
+**Status:** M1.7 implementation branch prepared; PR/CI validation required before closure.
