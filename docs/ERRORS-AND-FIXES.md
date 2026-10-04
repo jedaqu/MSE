@@ -146,3 +146,14 @@ Public technical record only.
 **Important limitation:** Numeric object identities are store-local. They are not yet content hashes or durable addresses.
 
 **Status:** Implementation complete on `m1.6-object-identity-foundation`; pre-PR audit and CI validation required.
+
+
+## M1.6-001
+
+**Problem:** The first M1.6 implementation head failed the formatting gate. Rustfmt required two spacing changes and multiline formatting for two long assertions.
+
+**Detection:** PR #12 CI run `37171772511`, formatting step only. Tests, Clippy, and the performance baseline were skipped because formatting failed first.
+
+**Correction:** Applied the exact rustfmt changes without semantic modification.
+
+**Status:** Corrected before creating the replacement validation PR.

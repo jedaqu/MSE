@@ -512,8 +512,14 @@ mod tests {
         assert_eq!(first.object_id(id(2)), second.object_id(id(2)));
         assert_ne!(first.object_id(id(1)), second.object_id(id(1)));
         assert_eq!(store.len(), 4);
-        assert_eq!(first.materialize(&store).unwrap(), vec![block(1), block(2), block(3)]);
-        assert_eq!(second.materialize(&store).unwrap(), vec![block(1), block(9), block(3)]);
+        assert_eq!(
+            first.materialize(&store).unwrap(),
+            vec![block(1), block(2), block(3)]
+        );
+        assert_eq!(
+            second.materialize(&store).unwrap(),
+            vec![block(1), block(9), block(3)]
+        );
     }
 
     #[test]
