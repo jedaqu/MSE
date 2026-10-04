@@ -288,24 +288,20 @@ pub(crate) mod contract_tests {
             if !self.injected {
                 self.injected = true;
                 return match self.mode {
-                    UnknownInjectionMode::BeforePublication => {
-                        Ok(CommitOutcome::Unknown {
-                            transaction_id: prepared.transaction_id(),
-                            generation: prepared.target_generation(),
-                        })
-                    }
-                    UnknownInjectionMode::AfterPublication => {
-                        match self.inner.commit(prepared)? {
-                            CommitOutcome::Committed {
-                                transaction_id,
-                                generation,
-                            } => Ok(CommitOutcome::Unknown {
-                                transaction_id,
-                                generation,
-                            }),
-                            other => Ok(other),
-                        }
-                    }
+                    UnknownInjectionMode::BeforePublication => Ok(CommitOutcome::Unknown {
+                        transaction_id: prepared.transaction_id(),
+                        generation: prepared.target_generation(),
+                    }),
+                    UnknownInjectionMode::AfterPublication => match self.inner.commit(prepared)? {
+                        CommitOutcome::Committed {
+                            transaction_id,
+                            generation,
+                        } => Ok(CommitOutcome::Unknown {
+                            transaction_id,
+                            generation,
+                        }),
+                        other => Ok(other),
+                    },
                 };
             }
 
@@ -414,13 +410,15 @@ pub(crate) mod contract_tests {
             assert_eq!(backend.generation(), Generation::new(1));
         }
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        contract_tests::{assert_backend_contract, assert_backend_recovery_contract, assert_unknown_recovery_contract},
+        contract_tests::{
+            assert_backend_contract, assert_backend_recovery_contract,
+            assert_unknown_recovery_contract,
+        },
         PersistenceBackend,
     };
     use crate::persistence::{FileBackend, PersistenceError};
