@@ -195,7 +195,12 @@ impl FileBackend {
             actual: self.generation,
         })?;
 
-        self.append(PREPARE, transaction_id, target, &encode_prepare(self.generation, &root))?;
+        self.append(
+            PREPARE,
+            transaction_id,
+            target,
+            &encode_prepare(self.generation, &root),
+        )?;
         self.prepared = Some(RetainedPrepare {
             prepared: prepared.clone(),
             root,
@@ -390,7 +395,11 @@ impl FileBackend {
     }
 
     fn intern(&mut self, block: Block) -> Result<u64, PersistenceError> {
-        if let Some((index, _)) = self.objects.iter().enumerate().find(|(_, item)| **item == block)
+        if let Some((index, _)) = self
+            .objects
+            .iter()
+            .enumerate()
+            .find(|(_, item)| **item == block)
         {
             return Ok(u64::try_from(index + 1).map_err(|_| PersistenceError::Corrupt(0))?);
         }
@@ -468,7 +477,9 @@ impl FileBackend {
             let mut record = [0u8; RECORD_HEADER];
             file.read_exact(&mut record)?;
             let kind = record[0];
-            let tx = TransactionId::from_raw(u64::from_le_bytes(record[1..9].try_into().unwrap()));
+            let tx = TransactionId::from_raw(u64::from_le_bytes(
+                record[1..9].try_into().unwrap(),
+            ));
             let record_generation =
                 Generation::new(u64::from_le_bytes(record[9..17].try_into().unwrap()));
             let payload_len = u64::from_le_bytes(record[17..25].try_into().unwrap());
@@ -497,8 +508,8 @@ impl FileBackend {
                 OBJECT => {
                     let (object_id, block) =
                         decode_object(&payload).ok_or(PersistenceError::Corrupt(offset))?;
-                    let expected_id =
-                        u64::try_from(objects.len() + 1).map_err(|_| PersistenceError::Corrupt(offset))?;
+                    let expected_id = u64::try_from(objects.len() + 1)
+                        .map_err(|_| PersistenceError::Corrupt(offset))?;
                     if object_id != expected_id
                         || (objects.is_empty() && block != Block::zeroed())
                     {
@@ -513,8 +524,8 @@ impl FileBackend {
                     if prepared.is_some() {
                         return Err(PersistenceError::Corrupt(offset));
                     }
-                    let (base, next_root) =
-                        decode_prepare(&payload, block_count).ok_or(PersistenceError::Corrupt(offset))?;
+                    let (base, next_root) = decode_prepare(&payload, block_count)
+                        .ok_or(PersistenceError::Corrupt(offset))?;
                     if base != generation || base.next() != Some(record_generation) {
                         return Err(PersistenceError::Corrupt(offset));
                     }
@@ -692,7 +703,8 @@ mod tests {
         Block, BlockId, CommitOutcome, DurabilityState, Engine, Generation, TransactionId,
         BLOCK_SIZE,
     };
-    use std::fs;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
