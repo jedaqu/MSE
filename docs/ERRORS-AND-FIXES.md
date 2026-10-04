@@ -229,3 +229,18 @@ Public technical record only.
 **Boundary:** No persistent backend, storage trait, journal, filesystem/block-device integration, kernel/driver code, OS-specific adapter, or networking was introduced. `TransactionId` and `Generation` remain process-local/logical identities at this stage.
 
 **Status:** Closed. M1.7 establishes the contract gate for the next backend-neutral persistence/durability boundary.
+
+
+## M1.8 persistence and durability boundary
+
+**Pre-change checkpoint:** `main` at `579d017a73dcec9ae17f2ef5c80e22609cef86c5`, with zero open pull requests. Exact post-merge CI run `37174334855` completed successfully; rust job `111353700148` passed formatting, tests, Clippy, and the M0.5 performance baseline.
+
+**Scope:** Define the minimum backend-neutral boundary between logical publication and physical durability, without adding a storage implementation.
+
+**Implementation:** Added `DurabilityRequirement`, `DurabilityState`, `DurabilityObservation`, and `DurabilityObservationError`. Refined `CommitOutcome::Unknown` so it preserves both transaction identity and target generation.
+
+**Contract:** Publication and durability are separate acknowledgements. A durable observation is valid only after `Committed` publication is confirmed. `Pending` and `Unknown` durability states never satisfy the durable requirement.
+
+**Boundary:** No storage trait, persistent object store, journal, filesystem/block-device integration, physical addressing, durable transaction encoding, recovery database, kernel/driver code, OS-specific adapter, or networking.
+
+**Status:** M1.8 implementation prepared; PR/CI validation required before closure.

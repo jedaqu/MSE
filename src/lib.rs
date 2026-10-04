@@ -413,7 +413,10 @@ pub enum CommitOutcome {
     /// The target generation is known not to have been published.
     Aborted { transaction_id: TransactionId },
     /// Publication status cannot be established yet.
-    Unknown { transaction_id: TransactionId },
+    Unknown {
+        transaction_id: TransactionId,
+        generation: Generation,
+    },
 }
 
 impl CommitOutcome {
@@ -422,7 +425,95 @@ impl CommitOutcome {
         match self {
             Self::Committed { transaction_id, .. }
             | Self::Aborted { transaction_id }
-            | Self::Unknown { transaction_id } => *transaction_id,
+            | Self::Unknown { transaction_id, .. } => *transaction_id,
+        }
+    }
+
+    /// Returns the target generation when publication was committed or is unknown.
+    pub fn generation(&self) -> Option<Generation> {
+        match self {
+            Self::Committed { generation, .. } | Self::Unknown { generation, .. } => {
+                Some(*generation)
+            }
+            Self::Aborted { .. } => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DurabilityRequirement {
+    /// Logical publication is sufficient for the caller.
+    Publication,
+    /// Publication must be followed by a positive durability acknowledgement.
+    Durable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DurabilityState {
+    /// Durability has not yet been established.
+    Pending,
+    /// Durability is positively established for the published generation.
+    Durable,
+    /// A durability attempt occurred, but its final result is not established.
+    Unknown,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DurabilityObservation {
+    transaction_id: TransactionId,
+    generation: Generation,
+    state: DurabilityState,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum DurabilityObservationError {
+    CommitNotConfirmed { transaction_id: TransactionId },
+}
+
+impl DurabilityObservation {
+    /// Creates a backend-neutral durability observation for a confirmed publication.
+    pub fn from_commit(
+        outcome: &CommitOutcome,
+        state: DurabilityState,
+    ) -> Result<Self, DurabilityObservationError> {
+        match outcome {
+            CommitOutcome::Committed {
+                transaction_id,
+                generation,
+            } => Ok(Self {
+                transaction_id: *transaction_id,
+                generation: *generation,
+                state,
+            }),
+            CommitOutcome::Aborted { transaction_id }
+            | CommitOutcome::Unknown { transaction_id, .. } => {
+                Err(DurabilityObservationError::CommitNotConfirmed {
+                    transaction_id: *transaction_id,
+                })
+            }
+        }
+    }
+
+    /// Returns the transaction identity associated with this durability observation.
+    pub fn transaction_id(&self) -> TransactionId {
+        self.transaction_id
+    }
+
+    /// Returns the generation covered by this durability observation.
+    pub fn generation(&self) -> Generation {
+        self.generation
+    }
+
+    /// Returns the current durability state.
+    pub fn state(&self) -> DurabilityState {
+        self.state
+    }
+
+    /// Returns whether the requested durability boundary is positively satisfied.
+    pub fn satisfies(&self, requirement: DurabilityRequirement) -> bool {
+        match requirement {
+            DurabilityRequirement::Publication => true,
+            DurabilityRequirement::Durable => self.state == DurabilityState::Durable,
         }
     }
 }
@@ -604,9 +695,10 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::{
-        Block, BlockId, ChangeSet, CommitOutcome, DiffError, Engine, Generation, ObjectId,
-        ObjectStore, PrepareError, PreparedState, RestoreError, StateRoot, StateRootError,
-        TransactionId, WriteError, BLOCK_SIZE,
+        Block, BlockId, ChangeSet, CommitOutcome, DiffError, DurabilityObservation,
+        DurabilityObservationError, DurabilityRequirement, DurabilityState, Engine, Generation,
+        ObjectId, ObjectStore, PrepareError, PreparedState, RestoreError, StateRoot,
+        StateRootError, TransactionId, WriteError, BLOCK_SIZE,
     };
 
     fn block(value: u8) -> Block {
@@ -1269,10 +1361,61 @@ mod tests {
             generation: Generation::new(9),
         };
         let aborted = CommitOutcome::Aborted { transaction_id };
-        let unknown = CommitOutcome::Unknown { transaction_id };
+        let unknown = CommitOutcome::Unknown {
+            transaction_id,
+            generation: Generation::new(10),
+        };
 
         assert_eq!(committed.transaction_id(), transaction_id);
         assert_eq!(aborted.transaction_id(), transaction_id);
         assert_eq!(unknown.transaction_id(), transaction_id);
+        assert_eq!(unknown.generation(), Some(Generation::new(10)));
+    }
+
+    #[test]
+    fn durability_observation_requires_confirmed_publication() {
+        let transaction_id = TransactionId::new();
+        let aborted = CommitOutcome::Aborted { transaction_id };
+        let unknown = CommitOutcome::Unknown {
+            transaction_id,
+            generation: Generation::new(3),
+        };
+
+        assert_eq!(
+            DurabilityObservation::from_commit(&aborted, DurabilityState::Durable),
+            Err(DurabilityObservationError::CommitNotConfirmed { transaction_id })
+        );
+        assert_eq!(
+            DurabilityObservation::from_commit(&unknown, DurabilityState::Durable),
+            Err(DurabilityObservationError::CommitNotConfirmed { transaction_id })
+        );
+    }
+
+    #[test]
+    fn durability_observation_preserves_transaction_generation_and_state() {
+        let transaction_id = TransactionId::new();
+        let committed = CommitOutcome::Committed {
+            transaction_id,
+            generation: Generation::new(8),
+        };
+
+        let pending =
+            DurabilityObservation::from_commit(&committed, DurabilityState::Pending).unwrap();
+        let durable =
+            DurabilityObservation::from_commit(&committed, DurabilityState::Durable).unwrap();
+        let unknown =
+            DurabilityObservation::from_commit(&committed, DurabilityState::Unknown).unwrap();
+
+        assert_eq!(pending.transaction_id(), transaction_id);
+        assert_eq!(pending.generation(), Generation::new(8));
+        assert_eq!(pending.state(), DurabilityState::Pending);
+        assert!(!pending.satisfies(DurabilityRequirement::Durable));
+        assert!(pending.satisfies(DurabilityRequirement::Publication));
+
+        assert_eq!(durable.state(), DurabilityState::Durable);
+        assert!(durable.satisfies(DurabilityRequirement::Durable));
+
+        assert_eq!(unknown.state(), DurabilityState::Unknown);
+        assert!(!unknown.satisfies(DurabilityRequirement::Durable));
     }
 }
