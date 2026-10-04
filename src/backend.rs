@@ -282,7 +282,7 @@ mod tests {
     fn file_backend_satisfies_the_recovery_contract() {
         let file = path();
 
-        assert_backend_recovery_contract(|| FileBackend::open(&file, 2)).unwrap();
+        assert_backend_recovery_contract(|| FileBackend::open(&file, 2));
 
         fs::remove_file(file).unwrap();
     }
