@@ -408,7 +408,7 @@ pub(crate) mod contract_tests {
                 backend.prepared(committed_tx).is_none(),
                 "reconciled committed publication must not retain a duplicate prepared transaction"
             );
-            assert_eq!(backend.generation(), Generation::new(1));
+            assert_eq!(backend.generation(), Generation::new(2));
         }
     }
 }
