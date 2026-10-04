@@ -55,7 +55,7 @@ fn main() {
     let checkpoint = engine.checkpoint();
     engine.write(id, block(5)).unwrap();
     for _ in 0..WARMUP {
-        black_box(engine.diff(&checkpoint));
+        black_box(engine.diff(&checkpoint).unwrap());
     }
     let start = Instant::now();
     for _ in 0..ITERATIONS {
