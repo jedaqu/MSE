@@ -59,7 +59,7 @@ fn main() {
     }
     let start = Instant::now();
     for _ in 0..ITERATIONS {
-        black_box(engine.diff(&checkpoint));
+        black_box(engine.diff(&checkpoint).unwrap());
     }
     report("diff", ITERATIONS, start.elapsed());
 
