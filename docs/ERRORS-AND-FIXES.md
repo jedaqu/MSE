@@ -310,3 +310,18 @@ Public technical record only.
 **Scope boundary:** Reopen/recovery lifecycle was intentionally not abstracted in M1.11 because the existing `PersistenceBackend` contract does not define a backend-neutral reconstruction mechanism.
 
 **Status:** Closed.
+
+
+## M1.12 recovery contract test harness
+
+**Problem:** M1.11 made the operational backend contract reusable, but reconstruction/recovery semantics could still only be exercised through backend-specific tests because the contract had no generic way to obtain a fresh backend instance over the same durable state.
+
+**Correction:** Added a reusable recovery contract harness that accepts a backend-specific factory closure and validates reconstruction, committed-state recovery, same-transaction `Aborted` recovery and retry, and persistent discard semantics.
+
+**Detection:** M1.12 pre-audit from `main` after M1.11 closure.
+
+**Validation:** Implementation CI run `37218914252` passed formatting, tests, Clippy and the M0.5 baseline. Post-merge push run `37218956364` passed on integrated main SHA `a48ca0378610c8cfb8f40c097bb5e16aaa09d705`; rust job `111485178629` passed all validation steps.
+
+**Scope boundary:** Construction remains backend-specific. No second backend, physical storage format, platform adapter, universal constructor, or semantic change was introduced.
+
+**Status:** Closed.
