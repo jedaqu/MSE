@@ -383,7 +383,7 @@ impl FileBackend {
             .enumerate()
             .find(|(_, item)| **item == block)
         {
-            return Ok(u64::try_from(index + 1).map_err(|_| PersistenceError::Corrupt(0))?);
+            return u64::try_from(index + 1).map_err(|_| PersistenceError::Corrupt(0));
         }
 
         let object_id =
