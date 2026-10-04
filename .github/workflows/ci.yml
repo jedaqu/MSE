@@ -11,8 +11,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install stable toolchain
-        run: rustup toolchain install stable --profile minimal
+      - name: Install pinned toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -22,3 +22,6 @@ jobs:
 
       - name: Run Clippy
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run M0.5 performance baseline
+        run: cargo run --release --bin m0_5_baseline
