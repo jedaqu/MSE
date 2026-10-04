@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
@@ -11,8 +13,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install pinned toolchain
-        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Verify project toolchain
+        run: rustup show active-toolchain
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -24,4 +26,5 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
 
       - name: Run M0.5 performance baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: cargo run --release --bin m0_5_baseline
