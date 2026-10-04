@@ -58,6 +58,7 @@ pub enum DiffError {
 }
 
 impl Engine {
+    /// Creates an in-memory engine with `blocks` zero-filled blocks.
     pub fn new(blocks: usize) -> Self {
         Self {
             base: vec![Block::zeroed(); blocks],
@@ -65,10 +66,13 @@ impl Engine {
         }
     }
 
+    /// Returns the fixed number of blocks in this engine.
     pub fn block_count(&self) -> usize {
         self.base.len()
     }
 
+    /// Reads a block, preferring its uncommitted overlay value over the base.
+    /// Returns `None` when `id` is outside the engine.
     pub fn read(&self, id: BlockId) -> Option<Block> {
         self.overlay
             .get(id.index())
@@ -76,6 +80,8 @@ impl Engine {
             .or_else(|| self.base.get(id.index()).cloned())
     }
 
+    /// Replaces the overlay value for `id` without changing the base.
+    /// An out-of-range ID returns an error and leaves the engine unchanged.
     pub fn write(&mut self, id: BlockId, block: Block) -> Result<(), WriteError> {
         let index = id.index();
 
@@ -90,6 +96,7 @@ impl Engine {
         Ok(())
     }
 
+    /// Captures an immutable copy of the overlay and its block-count shape.
     pub fn checkpoint(&self) -> Checkpoint {
         Checkpoint {
             block_count: self.block_count(),
@@ -97,6 +104,8 @@ impl Engine {
         }
     }
 
+    /// Replaces the overlay with a compatible checkpoint's overlay.
+    /// Compatibility is based on block count; base contents are not captured.
     pub fn restore(&mut self, checkpoint: &Checkpoint) -> Result<(), RestoreError> {
         if checkpoint.block_count != self.block_count()
             || checkpoint.overlay.len() != self.block_count()
@@ -110,14 +119,18 @@ impl Engine {
         Ok(())
     }
 
+    /// Clears all uncommitted overlay values, leaving the base untouched.
     pub fn discard(&mut self) {
         self.overlay.fill(None);
     }
 
+    /// Counts overlay entries, including writes equal to their base value.
     pub fn dirty_count(&self) -> usize {
         self.overlay.iter().filter(|block| block.is_some()).count()
     }
 
+    /// Applies every present overlay value to the in-memory base and clears it.
+    /// This operation has no backend and therefore defines no backend failure policy.
     pub fn commit(&mut self) {
         for (base, change) in self.base.iter_mut().zip(self.overlay.iter_mut()) {
             if let Some(block) = change.take() {
@@ -126,6 +139,8 @@ impl Engine {
         }
     }
 
+    /// Returns IDs whose overlay entries differ from the checkpoint overlay.
+    /// This compares overlay state, not effective block contents or base data.
     pub fn diff(&self, checkpoint: &Checkpoint) -> Result<Vec<BlockId>, DiffError> {
         if checkpoint.block_count != self.block_count()
             || checkpoint.overlay.len() != self.block_count()
@@ -222,6 +237,19 @@ mod tests {
         engine.write(id(3), block(6)).unwrap();
 
         assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0), id(3)]));
+    }
+
+    #[test]
+    fn same_as_base_write_is_dirty_and_diff_tracks_overlay_presence() {
+        let mut engine = Engine::new(1);
+        let checkpoint = engine.checkpoint();
+
+        engine.write(id(0), block(0)).unwrap();
+
+        assert_eq!(engine.read(id(0)), Some(block(0)));
+        assert_eq!(engine.block_count(), 1);
+        assert_eq!(engine.dirty_count(), 1);
+        assert_eq!(engine.diff(&checkpoint), Ok(vec![id(0)]));
     }
 
     #[test]
