@@ -268,9 +268,9 @@ Public technical record only.
 
 **Validation:** Final PR CI run `37214459183` passed formatting, tests, Clippy, and the M0.5 performance baseline. Post-merge push CI run `37214956081` passed on integrated main SHA `c9eaffcf6496c3c1c61c8300b735f0c6c96983f9`.
 
-**Boundary:** This milestone remains an experimental host-file persistence backend. No OS-specific adapter, block-device integration, kernel/driver code, networking, distributed coordination, or claim of full machine rollback was introduced.
+**Boundary:** This milestone remains an experimental host-file persistence backend. No OS-specific adapter, block-device integration, kernel/driver code, networking, or distributed coordination was introduced.
 
-**Public audit:** The implementation branch was reviewed for scope and public-boundary compliance before integration. The change was limited to `src/lib.rs` and the new `src/persistence.rs`; no private project context was added.
+**Public audit:** The implementation branch was reviewed for scope and public-boundary compliance before integration. The change was limited to `src/lib.rs` and the new `src/persistence.rs`.
 
 **Status:** Closed. M1.9 establishes the first persistent backend experiment; the next milestone must build on the existing core contract rather than redefine it.
 
