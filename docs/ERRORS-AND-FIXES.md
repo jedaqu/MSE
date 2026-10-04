@@ -145,7 +145,7 @@ Public technical record only.
 
 **Important limitation:** Numeric object identities are store-local. They are not yet content hashes or durable addresses.
 
-**Status:** Implementation complete on `m1.6-object-identity-foundation`; pre-PR audit and CI validation required.
+**Status:** Closed. Integrated in PR #14 at `0715b87562b9e6dc70b978cd26228f77afa4d4fb`. PR CI `37171893949` and post-merge CI `37171927564` both passed.
 
 
 ## M1.6-001
