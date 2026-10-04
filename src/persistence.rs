@@ -507,7 +507,7 @@ impl FileBackend {
                         return Err(PersistenceError::Corrupt(offset));
                     }
                     if next_root.iter().any(|object_id| {
-                        object_id == 0
+                        *object_id == 0
                             || usize::try_from(*object_id - 1)
                                 .map_or(true, |index| index >= objects.len())
                     }) {
