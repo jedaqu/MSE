@@ -64,18 +64,23 @@ fn execute_line(
                 .parse::<u8>()
                 .map_err(|_| format!("invalid byte value: {byte}"));
             match (index, byte) {
-                (Ok(index), Ok(byte)) => match engine_mut(engine)?.write(BlockId::new(index), block(byte)) {
-                    Ok(()) => Ok(Some(format!("written: block={index} value={byte}"))),
-                    Err(WriteError::OutOfRange { block_count, .. }) => {
-                        Err(format!("block {index} is out of range (blocks={block_count})"))
+                (Ok(index), Ok(byte)) => {
+                    match engine_mut(engine)?.write(BlockId::new(index), block(byte)) {
+                        Ok(()) => Ok(Some(format!("written: block={index} value={byte}"))),
+                        Err(WriteError::OutOfRange { block_count, .. }) => {
+                            Err(format!("block {index} is out of range (blocks={block_count})"))
+                        }
                     }
-                },
+                }
                 (Err(error), _) | (_, Err(error)) => Err(error),
             }
         }
         ["read", index] => match index.parse::<usize>() {
             Ok(index) => match engine_ref(engine)?.read(BlockId::new(index)) {
-                Some(block) => Ok(Some(format!("read: block={index} value={}", block.as_bytes()[0]))),
+                Some(block) => Ok(Some(format!(
+                    "read: block={index} value={}",
+                    block.as_bytes()[0]
+                ))),
                 None => Err(format!("block {index} is out of range")),
             },
             Err(_) => Err(format!("invalid block index: {index}")),
@@ -101,16 +106,25 @@ fn execute_line(
                 state.block_count,
                 state.dirty_count,
                 state.has_changes,
-                state.affected_blocks.iter().map(|id| id.index()).collect::<Vec<_>>()
+                state.affected_blocks
+                    .iter()
+                    .map(|id| id.index())
+                    .collect::<Vec<_>>()
             )];
             lines.push(match state.checkpoint {
                 CheckpointRelation::NotCompared => "checkpoint: not-compared".to_owned(),
-                CheckpointRelation::Compatible { checkpoint_id, changed_blocks } => format!(
+                CheckpointRelation::Compatible {
+                    checkpoint_id,
+                    changed_blocks,
+                } => format!(
                     "checkpoint: id={} compatible changed={:?}",
                     checkpoint_id.value(),
                     indices(&changed_blocks)
                 ),
-                CheckpointRelation::Incompatible { checkpoint_id, checkpoint_block_count } => format!(
+                CheckpointRelation::Incompatible {
+                    checkpoint_id,
+                    checkpoint_block_count,
+                } => format!(
                     "checkpoint: id={} incompatible blocks={checkpoint_block_count}",
                     checkpoint_id.value()
                 ),
@@ -120,18 +134,17 @@ fn execute_line(
         ["diff", id] => {
             let saved = checkpoint(checkpoints, id)?;
             match engine_ref(engine)?.diff(saved) {
-                Ok(changed) => {
-                    Ok(Some(format!("diff: blocks={:?}", indices(&changed))))
-                }
+                Ok(changed) => Ok(Some(format!(
+                    "diff: blocks={:?}",
+                    indices(&changed)
+                ))),
                 Err(_) => Err(format!("checkpoint {id} is incompatible with this engine")),
             }
         }
         ["restore", id] => {
             let saved = checkpoint(checkpoints, id)?.clone();
             match engine_mut(engine)?.restore(&saved) {
-                Ok(()) => {
-                    Ok(Some(format!("restored: checkpoint={id}")))
-                }
+                Ok(()) => Ok(Some(format!("restored: checkpoint={id}"))),
                 Err(_) => Err(format!("checkpoint {id} is incompatible with this engine")),
             }
         }
@@ -248,7 +261,10 @@ mod tests {
         engine
             .as_mut()
             .unwrap()
-            .write(BlockId::new(1), mse_core::Block::from_bytes([7; mse_core::BLOCK_SIZE]))
+            .write(
+                BlockId::new(1),
+                mse_core::Block::from_bytes([7; mse_core::BLOCK_SIZE]),
+            )
             .unwrap();
 
         let output = execute_line(
