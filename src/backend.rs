@@ -394,7 +394,7 @@ pub(crate) mod contract_tests {
                 backend.commit(&prepared).unwrap(),
                 CommitOutcome::Unknown {
                     transaction_id: committed_tx,
-                    generation: Generation::new(1),
+                    generation: Generation::new(2),
                 }
             );
             assert_eq!(
