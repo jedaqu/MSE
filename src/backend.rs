@@ -6,8 +6,8 @@ use crate::{
 /// Backend-neutral persistence contract for the logical state engine.
 ///
 /// Implementations translate these operations into their physical storage
-/// mechanism without redefining the semantics of publication, recovery,
-/// transaction identity, generations, or durability.
+/// mechanism without redefining publication, recovery, transaction identity,
+/// generations, or durability semantics.
 pub trait PersistenceBackend {
     type Error;
 
@@ -47,14 +47,135 @@ pub trait PersistenceBackend {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod contract_tests {
     use super::PersistenceBackend;
-    use crate::persistence::{FileBackend, PersistenceError};
+    use crate::{
+        Block, BlockId, ChangeSet, CommitOutcome, Engine, Generation, TransactionId, BLOCK_SIZE,
+    };
 
-    fn assert_backend<B: PersistenceBackend<Error = PersistenceError>>() {}
+    fn block(value: u8) -> Block {
+        Block::from_bytes([value; BLOCK_SIZE])
+    }
+
+    fn changes(index: usize, value: u8, block_count: usize) -> ChangeSet {
+        let mut engine = Engine::new(block_count);
+        engine.write(BlockId::new(index), block(value)).unwrap();
+        engine.pending_changes()
+    }
+
+    /// Executes the backend-neutral behavioral contract against one backend.
+    ///
+    /// The harness intentionally uses only PersistenceBackend operations and
+    /// core semantic types. Backend construction, reopening and physical
+    /// recovery remain outside this contract harness.
+    pub(crate) fn assert_backend_contract<B>(backend: &mut B)
+    where
+        B: PersistenceBackend,
+        B::Error: std::fmt::Debug,
+    {
+        assert_eq!(backend.block_count(), 2);
+        assert_eq!(backend.generation(), Generation::initial());
+        assert_eq!(backend.read(BlockId::new(0)).unwrap(), Some(block(0)));
+        assert_eq!(backend.read(BlockId::new(1)).unwrap(), Some(block(0)));
+
+        let tx = TransactionId::new();
+        let prepared = backend.prepare(tx, &changes(0, 7, 2)).unwrap();
+
+        assert_eq!(prepared.transaction_id(), tx);
+        assert_eq!(prepared.base_generation(), Generation::initial());
+        assert_eq!(prepared.target_generation(), Generation::new(1));
+        assert_eq!(backend.generation(), Generation::initial());
+        assert_eq!(backend.read(BlockId::new(0)).unwrap(), Some(block(0)));
+
+        let retained = backend
+            .prepared(tx)
+            .expect("prepared state must be retained");
+        assert_eq!(retained, prepared);
+
+        assert_eq!(
+            backend.reconcile(tx).unwrap(),
+            CommitOutcome::Aborted { transaction_id: tx }
+        );
+        let retry = backend
+            .prepared(tx)
+            .expect("Aborted must retain prepared state");
+        assert_eq!(retry, prepared);
+
+        let committed = backend.commit(&retry).unwrap();
+        assert_eq!(
+            committed,
+            CommitOutcome::Committed {
+                transaction_id: tx,
+                generation: Generation::new(1),
+            }
+        );
+        assert_eq!(backend.generation(), Generation::new(1));
+        assert_eq!(backend.read(BlockId::new(0)).unwrap(), Some(block(7)));
+        assert!(backend.prepared(tx).is_none());
+
+        assert_eq!(backend.commit(&prepared).unwrap(), committed);
+        assert_eq!(
+            backend.reconcile(tx).unwrap(),
+            CommitOutcome::Committed {
+                transaction_id: tx,
+                generation: Generation::new(1),
+            }
+        );
+
+        let aborted = CommitOutcome::Aborted { transaction_id: tx };
+        assert!(backend.acknowledge_durability(&aborted).is_err());
+
+        let unknown = CommitOutcome::Unknown {
+            transaction_id: tx,
+            generation: Generation::new(2),
+        };
+        assert!(backend.acknowledge_durability(&unknown).is_err());
+
+        let discard_tx = TransactionId::new();
+        backend
+            .prepare(discard_tx, &changes(1, 9, 2))
+            .expect("second generation can be prepared after publication");
+        assert_eq!(backend.generation(), Generation::new(1));
+        assert_eq!(backend.read(BlockId::new(1)).unwrap(), Some(block(0)));
+
+        backend.discard(discard_tx).unwrap();
+        assert!(backend.prepared(discard_tx).is_none());
+        assert_eq!(backend.generation(), Generation::new(1));
+        assert_eq!(backend.read(BlockId::new(1)).unwrap(), Some(block(0)));
+        assert!(backend.reconcile(discard_tx).is_err());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{contract_tests::assert_backend_contract, PersistenceBackend};
+    use crate::persistence::{FileBackend, PersistenceError};
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::{fs, process};
+
+    static NEXT_PATH: AtomicU64 = AtomicU64::new(1);
+
+    fn path() -> PathBuf {
+        let n = NEXT_PATH.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("mse-m1-11-{}-{}", process::id(), n))
+    }
 
     #[test]
     fn file_backend_implements_the_backend_neutral_contract() {
+        fn assert_backend<B: PersistenceBackend<Error = PersistenceError>>() {}
+
         assert_backend::<FileBackend>();
+    }
+
+    #[test]
+    fn file_backend_satisfies_the_behavioral_contract() {
+        let file = path();
+        let mut backend = FileBackend::open(&file, 2).unwrap();
+
+        assert_backend_contract(&mut backend);
+
+        drop(backend);
+        fs::remove_file(file).unwrap();
     }
 }
