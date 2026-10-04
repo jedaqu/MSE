@@ -129,7 +129,8 @@ fn execute_line(
                     checkpoint_id.value()
                 ),
             });
-            Ok(Some(lines.join("\n")))
+            Ok(Some(lines.join("
+")))
         }
         ["diff", id] => {
             let saved = checkpoint(checkpoints, id)?;
@@ -210,10 +211,13 @@ mod tests {
             .unwrap();
 
         execute_line("write 1 34", &mut engine, &mut checkpoints).unwrap();
-        let diff =
-            execute_line(&format!("diff {checkpoint_id}"), &mut engine, &mut checkpoints)
-                .unwrap()
-                .unwrap();
+        let diff = execute_line(
+            &format!("diff {checkpoint_id}"),
+            &mut engine,
+            &mut checkpoints,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(diff, "diff: blocks=[1]");
 
         execute_line(
@@ -234,14 +238,20 @@ mod tests {
         execute_line("commit", &mut engine, &mut checkpoints).unwrap();
         execute_line("write 1 56", &mut engine, &mut checkpoints).unwrap();
         execute_line("discard", &mut engine, &mut checkpoints).unwrap();
-        let inspection =
-            execute_line("inspect", &mut engine, &mut checkpoints).unwrap().unwrap();
+        let inspection = execute_line("inspect", &mut engine, &mut checkpoints)
+            .unwrap()
+            .unwrap();
         assert!(inspection.contains("state: blocks=2 dirty=0 changes=false affected=[]"));
     }
 
     #[test]
     fn invalid_commands_are_reported_and_session_continues() {
-        let input = "read 0\nnew 1\nwrite 9 2\nread 0\nquit\n";
+        let input = "read 0
+new 1
+write 9 2
+read 0
+quit
+";
         let mut output = Vec::new();
         run(Cursor::new(input), &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
@@ -252,7 +262,12 @@ mod tests {
 
     #[test]
     fn checkpoint_listing_reports_created_ids() {
-        let input = "new 2\ncheckpoint\ncheckpoint\ncheckpoints\nquit\n";
+        let input = "new 2
+checkpoint
+checkpoint
+checkpoints
+quit
+";
         let mut output = Vec::new();
         run(Cursor::new(input), &mut output).unwrap();
         let output = String::from_utf8(output).unwrap();
