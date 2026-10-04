@@ -1,4 +1,7 @@
+pub mod backend;
 pub mod persistence;
+
+pub use backend::PersistenceBackend;
 
 pub const BLOCK_SIZE: usize = 4096;
 
