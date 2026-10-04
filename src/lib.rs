@@ -48,9 +48,6 @@ impl ObjectStoreId {
         self.0
     }
 
-    pub(crate) const fn from_raw(value: u64) -> Self {
-        Self(value)
-    }
 }
 
 /// Identity of one immutable object stored in an `ObjectStore`.
@@ -315,6 +312,9 @@ impl TransactionId {
     /// Returns the numeric value of this transaction identity.
     pub fn value(self) -> u64 {
         self.0
+    }
+    pub(crate) const fn from_raw(value: u64) -> Self {
+        Self(value)
     }
 }
 
