@@ -31,13 +31,16 @@ fn main() {
     report("read", ITERATIONS, start.elapsed());
 
     let mut engine = Engine::new(BLOCKS);
-    for _ in 0..WARMUP {
-        engine.write(id, block(8)).unwrap();
+    for iteration in 0..WARMUP {
+        let value = black_box((iteration as u8).wrapping_add(1));
+        engine.write(id, block(value)).unwrap();
     }
     let start = Instant::now();
-    for _ in 0..ITERATIONS {
-        engine.write(id, block(8)).unwrap();
+    for iteration in 0..ITERATIONS {
+        let value = black_box((iteration as u8).wrapping_add(1));
+        engine.write(id, block(value)).unwrap();
     }
+    black_box(engine.read(id));
     report("write", ITERATIONS, start.elapsed());
 
     let mut engine = Engine::new(BLOCKS);
@@ -66,26 +69,32 @@ fn main() {
     let mut engine = Engine::new(BLOCKS);
     engine.write(id, block(6)).unwrap();
     let checkpoint = engine.checkpoint();
-    for _ in 0..WARMUP {
-        engine.write(id, block(7)).unwrap();
+    for iteration in 0..WARMUP {
+        let value = black_box((iteration as u8).wrapping_add(2));
+        engine.write(id, block(value)).unwrap();
         engine.restore(&checkpoint).unwrap();
     }
     let start = Instant::now();
-    for _ in 0..ITERATIONS {
-        engine.write(id, block(7)).unwrap();
+    for iteration in 0..ITERATIONS {
+        let value = black_box((iteration as u8).wrapping_add(2));
+        engine.write(id, block(value)).unwrap();
         engine.restore(&checkpoint).unwrap();
     }
+    black_box(engine.read(id));
     report("write+restore", ITERATIONS, start.elapsed());
 
     let mut engine = Engine::new(BLOCKS);
-    for _ in 0..WARMUP {
-        engine.write(id, block(9)).unwrap();
+    for iteration in 0..WARMUP {
+        let value = black_box((iteration as u8).wrapping_add(3));
+        engine.write(id, block(value)).unwrap();
         engine.commit();
     }
     let start = Instant::now();
-    for _ in 0..ITERATIONS {
-        engine.write(id, block(9)).unwrap();
+    for iteration in 0..ITERATIONS {
+        let value = black_box((iteration as u8).wrapping_add(3));
+        engine.write(id, block(value)).unwrap();
         engine.commit();
     }
+    black_box(engine.read(id));
     report("write+commit", ITERATIONS, start.elapsed());
 }
