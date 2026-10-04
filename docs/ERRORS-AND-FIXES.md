@@ -122,4 +122,14 @@ Public technical record only.
 
 **Boundary:** No storage trait, persistence, filesystem, block device, kernel, driver, OS-specific integration, or networking.
 
-**Status:** Implementation added on `m1.5-change-set-boundary`; pending PR/CI validation required before integration.
+**Status:** Implementation added on `m1.5-change-set-boundary`; pre-PR audit found and corrected M1.5-001 below. Pending PR/CI validation remains required.
+
+## M1.5-001
+
+**Problem:** The first M1.5 commit omitted the closing brace for the new `ChangeSet` implementation, so the Rust source was syntactically invalid.
+
+**Detection:** Static pre-PR audit of the exact branch head `6cdfc36d15a805d691220c776605b71b93793309`.
+
+**Correction:** Closed the `ChangeSet` implementation before the `Engine` declaration. No scope expansion or semantic change was introduced.
+
+**Status:** Corrected before PR creation. CI must validate the corrected head.

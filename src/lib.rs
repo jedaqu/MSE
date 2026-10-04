@@ -109,6 +109,7 @@ impl ChangeSet {
     pub fn as_slice(&self) -> &[(BlockId, Block)] {
         &self.changes
     }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Engine {
